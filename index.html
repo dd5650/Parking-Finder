@@ -1,0 +1,2345 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <!-- 모바일 / 스마트폰 풀스크린 & 노치 영역 대응 뷰포트 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <!-- PWA / 모바일 웹앱 전체화면 설정 (홈 화면 추가 시 앱처럼 구동) -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="파킹파인더">
+    <meta name="theme-color" content="#ffffff">
+
+    <!-- PWA Manifest & 아이콘 -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='128' fill='%232563eb'/><path fill='%23ffffff' d='M160 96h120c66 0 112 40 112 100 0 56-42 98-106 100v120h-56V96zm56 150h58c38 0 60-20 60-50 0-32-24-50-60-50h-58v100z'/></svg>">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='128' fill='%232563eb'/><path fill='%23ffffff' d='M160 96h120c66 0 112 40 112 100 0 56-42 98-106 100v120h-56V96zm56 150h58c38 0 60-20 60-50 0-32-24-50-60-50h-58v100z'/></svg>">
+
+    <title>파킹파인더 - 스마트폰 원터치 내비 & 전국 주차장 요금 검색</title>
+
+    <!-- 폰트: Pretendard -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    
+    <!-- 아이콘: Font Awesome 6 (cdnjs) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- 지도: Leaflet CSS & JS (고속 cdnjs) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+
+    <!-- 대용량 마커 클러스터링: Leaflet.markercluster (18,000+ 초고속 렌더링) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+
+    <!-- QR코드 생성 라이브러리: qrcode.js (고속 cdnjs) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <!-- 전국 공공데이터 표준 주차장 데이터셋 로드 -->
+    <script src="parking_data.js"></script>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        kakao: { yellow: '#FEE500', dark: '#191919' },
+                        parking: { free: '#10b981', public: '#2563eb', paid: '#f59e0b' },
+                        navi: { blue: '#0284c7', dark: '#0f172a' }
+                    },
+                    fontFamily: {
+                        sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%; margin: 0; padding: 0;
+            overflow: hidden; font-family: 'Pretendard', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+            background-color: #ffffff;
+        }
+
+        /* iOS 안전 영역 (Safe Area) */
+        .safe-bottom {
+            padding-bottom: env(safe-area-inset-bottom, 16px);
+        }
+        .safe-top {
+            padding-top: env(safe-area-inset-top, 0px);
+        }
+
+        /* 커스텀 스크롤바 */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+
+        /* 지도 캔버스 (클린 화이트톤 배경) */
+        #map-wrapper {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            width: 100%; height: 100%; background-color: #f8fafc;
+        }
+        #map {
+            width: 100% !important; height: 100% !important;
+            position: absolute !important; top: 0; left: 0;
+            background-color: #f8fafc !important;
+        }
+
+        /* 화이트톤 지도 타일 스타일링 */
+        .white-map-tile {
+            filter: brightness(102%) contrast(99%);
+        }
+
+        /* 주차장 가격 말풍선 마커 (스마트폰 터치 100% 최적화) */
+        .custom-pin {
+            pointer-events: auto !important;
+            cursor: pointer !important;
+        }
+        .price-marker-tag {
+            display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+            padding: 5px 10px; border-radius: 9999px; color: #ffffff;
+            font-size: 11px; font-weight: 800; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25);
+            cursor: pointer; transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease;
+            white-space: nowrap; border: 2px solid #ffffff; position: relative;
+            letter-spacing: -0.3px; touch-action: manipulation;
+        }
+        /* 스마트폰 터치 미스 방지 투명 확장 영역 (44px 이상 터치 영역 확보) */
+        .price-marker-tag::before {
+            content: ''; position: absolute;
+            top: -12px; bottom: -12px; left: -10px; right: -10px;
+            z-index: 10;
+        }
+        .price-marker-tag:hover {
+            transform: scale(1.1) translateY(-2px);
+            z-index: 1000;
+        }
+        .price-marker-tag::after {
+            content: ''; position: absolute; bottom: -5px; left: 50%;
+            transform: translateX(-50%); border-width: 5px 4px 0 4px; border-style: solid;
+        }
+        .tag-free { background: linear-gradient(135deg, #10b981, #059669); }
+        .tag-free::after { border-color: #059669 transparent transparent transparent; }
+        .tag-public { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+        .tag-public::after { border-color: #1d4ed8 transparent transparent transparent; }
+        .tag-paid { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .tag-paid::after { border-color: #d97706 transparent transparent transparent; }
+
+        /* 내 현재 위치 마커 (펄스 애니메이션) */
+        .gps-pulse-marker {
+            width: 22px; height: 22px; border-radius: 50%;
+            background: #2563eb; border: 3px solid #ffffff;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.4), 0 4px 10px rgba(0,0,0,0.3);
+            animation: pulse-ring 1.8s infinite;
+        }
+        @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.5); }
+            70% { box-shadow: 0 0 0 12px rgba(37, 99, 235, 0); }
+            100% { box-shadow: 0 0 0 2px rgba(37, 99, 235, 0); }
+        }
+
+        /* 내비게이션 자동차 마커 */
+        .nav-car-marker {
+            width: 40px; height: 40px; border-radius: 50%;
+            background: linear-gradient(135deg, #2563eb, #1e40af);
+            border: 3px solid #ffffff; box-shadow: 0 4px 16px rgba(37,99,235,0.7);
+            display: flex; align-items: center; justify-content: center;
+            color: #ffffff; font-size: 17px; transition: transform 0.25s ease;
+        }
+
+        /* 모바일 바텀시트 트랜지션 (스마트폰 전용 슬라이딩 서랍) */
+        @media (max-width: 768px) {
+            #mobileBottomSheet {
+                transition: transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+                will-change: transform;
+            }
+            #mobileBottomSheet.state-collapsed {
+                transform: translateY(calc(100% - 92px));
+            }
+            #mobileBottomSheet.state-half {
+                transform: translateY(calc(100% - 48vh));
+            }
+            #mobileBottomSheet.state-expanded {
+                transform: translateY(0);
+            }
+        }
+
+        /* 클러스터 아이콘 화이트톤 최적화 */
+        .marker-cluster-small { background-color: rgba(16, 185, 129, 0.4) !important; }
+        .marker-cluster-small div { background-color: #059669 !important; color: white !important; font-weight: 800 !important; }
+        .marker-cluster-medium { background-color: rgba(37, 99, 235, 0.4) !important; }
+        .marker-cluster-medium div { background-color: #2563eb !important; color: white !important; font-weight: 800 !important; }
+        .marker-cluster-large { background-color: rgba(245, 158, 11, 0.4) !important; }
+        .marker-cluster-large div { background-color: #d97706 !important; color: white !important; font-weight: 800 !important; }
+
+        /* 모든 모달 최상위 레이어 강제 적용 (지도나 어떤 요소에도 가려지지 않음) */
+        .app-modal-overlay {
+            z-index: 999999 !important;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 flex flex-col h-screen select-none md:select-auto">
+
+    <!-- 상단 글로벌 바 (PC 및 모바일 상단 바) -->
+    <div id="topBanner" class="bg-slate-900 text-white px-3 py-1.5 md:py-2 text-[11px] md:text-xs font-medium flex items-center justify-between shadow-sm z-40 flex-shrink-0">
+        <div class="flex items-center gap-1.5 md:gap-2 max-w-3xl truncate">
+            <span id="dataCountBadge" class="bg-emerald-500 text-white font-black px-1.5 py-0.5 rounded text-[10px]">
+                전국 18,198개소
+            </span>
+            <span id="bannerText" class="truncate font-semibold text-slate-300">
+                🗺️ 국토부 표준 지도 · 실시간 분/시간당 요금 · 원터치 스마트 내비
+            </span>
+        </div>
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+            <!-- 스마트폰 앱 다운로드 QR 버튼 -->
+            <button onclick="openMobileConnectModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-2 py-0.5 md:px-3 md:py-1 rounded-lg text-[11px] md:text-xs transition shadow-sm flex items-center gap-1.5 active:scale-95" title="휴대폰에 어플 다운로드 QR 열기">
+                <i class="fa-solid fa-qrcode text-amber-300"></i> <span>앱 다운로드·QR</span>
+            </button>
+            <!-- 지도 테마 변경 (모던 파스텔 / 클린 화이트 / 국토부 표준) -->
+            <button onclick="toggleMapTheme()" id="themeToggleBtn" class="bg-white/15 hover:bg-white/25 text-white font-bold px-2.5 py-1 rounded-xl text-[11px] md:text-xs transition border border-white/25 flex items-center gap-1.5 shadow-sm active:scale-95" title="지도 스타일 변경">
+                <i class="fa-solid fa-palette text-amber-300"></i> <span id="themeToggleText">🗺️ 표준 지도</span>
+            </button>
+            <button onclick="showAllNationwideLots()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 md:px-3 md:py-1 rounded-lg text-[11px] md:text-xs transition shadow-sm">
+                <i class="fa-solid fa-earth-asia"></i> <span class="hidden sm:inline">전국 전체</span>
+            </button>
+            <button onclick="openApiKeyModal()" class="bg-[#FEE500] hover:bg-[#ebd300] text-slate-950 font-bold px-2 py-0.5 md:px-3 md:py-1 rounded-lg text-[11px] md:text-xs transition shadow-sm">
+                <i class="fa-solid fa-key"></i> <span class="hidden sm:inline">카카오 키</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 헤더 영역 -->
+    <header class="bg-white border-b border-slate-200 z-30 shadow-sm flex-shrink-0">
+        <div class="px-3 md:px-4 py-2.5 md:py-3 flex items-center justify-between gap-2 md:gap-3 max-w-7xl mx-auto w-full">
+            <!-- 로고 -->
+            <div class="flex items-center gap-2 cursor-pointer flex-shrink-0" onclick="showAllNationwideLots()">
+                <div class="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md font-black text-lg md:text-xl">
+                    P
+                </div>
+                <div>
+                    <h1 class="font-black text-base md:text-lg text-slate-900 tracking-tight flex items-center gap-1 leading-none">
+                        파킹파인더
+                        <span class="bg-sky-500 text-white text-[9px] md:text-[10px] font-black px-1.5 py-0.5 rounded-full">WHITE</span>
+                    </h1>
+                    <p class="text-[10px] md:text-[11px] text-slate-500 font-semibold mt-0.5 hidden sm:block">전국 주차장 10분/시간당 요금 비교 · 스마트폰 1초 원터치 길안내</p>
+                </div>
+            </div>
+
+            <!-- 통합 검색창 (PC 및 태블릿) -->
+            <div class="flex-1 max-w-xl mx-1 hidden sm:block relative">
+                <form onsubmit="handleSearchSubmit(event)" class="relative flex items-center">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 text-slate-400"></i>
+                    <input type="text" id="searchInput" 
+                        placeholder="지역명, 주차장명, 지하철역, 랜드마크 (예: 강남역, 해운대, 여의도, 속초, 판교)"
+                        class="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white pl-10 pr-20 py-2 rounded-xl border border-slate-200 focus:border-blue-500 text-xs md:text-sm outline-none transition font-medium"
+                        autocomplete="off">
+                    <button type="submit" class="absolute right-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition">
+                        정확 검색
+                    </button>
+                </form>
+            </div>
+
+            <!-- 우측 모바일 및 PC 액션 버튼 -->
+            <div class="flex items-center gap-1.5 md:gap-2">
+                <!-- 어플 다운로드 & QR 버튼 -->
+                <button onclick="openMobileConnectModal()" title="휴대폰에 어플 다운로드 QR코드"
+                    class="hidden sm:flex items-center gap-1.5 text-xs font-black px-2.5 py-1.5 md:px-3 md:py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition border border-indigo-200 shadow-sm active:scale-95">
+                    <i class="fa-solid fa-qrcode text-indigo-600"></i>
+                    <span>앱 다운로드·QR</span>
+                </button>
+
+                <!-- PWA 앱 원터치 설치 버튼 -->
+                <button onclick="triggerPwaInstall()" id="pwaInstallBtn" title="휴대폰/PC에 어플 즉시 설치하기"
+                    class="flex items-center gap-1.5 text-xs font-black px-2.5 py-1.5 md:px-3 md:py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl transition shadow-sm active:scale-95">
+                    <i class="fa-solid fa-download text-amber-300"></i>
+                    <span>앱 설치</span>
+                </button>
+
+                <!-- GPS 내 위치 버튼 -->
+                <button onclick="getUserCurrentLocation()" title="현재 내 실제 GPS 위치 찾기"
+                    class="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 md:px-3 md:py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl transition border border-blue-200 shadow-sm">
+                    <i class="fa-solid fa-location-crosshairs text-blue-600"></i>
+                    <span class="text-xs">내 위치</span>
+                </button>
+
+                <!-- 안내 모달 -->
+                <button onclick="openInfoModal()" title="이용 안내"
+                    class="w-8 h-8 md:w-9 md:h-9 rounded-xl flex items-center justify-center text-slate-600 hover:bg-slate-100 transition border border-slate-200">
+                    <i class="fa-solid fa-circle-question text-sm md:text-base"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- 모바일 전용 검색바 -->
+        <div class="px-3 pb-2 sm:hidden">
+            <form onsubmit="handleSearchSubmit(event)" class="relative flex items-center">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 text-slate-400 text-xs"></i>
+                <input type="text" id="mobileSearchInput" 
+                    placeholder="지역, 역, 랜드마크 검색 (예: 강남역, 해운대, 여의도)"
+                    class="w-full bg-slate-100 focus:bg-white pl-9 pr-16 py-2 rounded-xl border border-slate-200 focus:border-blue-500 text-xs outline-none font-medium">
+                <button type="submit" class="absolute right-1 bg-slate-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg">
+                    검색
+                </button>
+            </form>
+        </div>
+    </header>
+
+    <!-- 메인 뷰포트 레이아웃 -->
+    <main class="flex-1 flex relative overflow-hidden h-full min-h-0">
+
+        <!-- ============================================== -->
+        <!-- 사이드바 (PC: 좌측 고정 / 스마트폰: 하단 바텀시트) -->
+        <!-- ============================================== -->
+        <aside id="mobileBottomSheet" class="state-collapsed md:!transform-none w-full md:w-[410px] lg:w-[440px] bg-white border-t md:border-t-0 md:border-r border-slate-200 flex flex-col z-30 flex-shrink-0 shadow-2xl md:shadow-none h-[88vh] md:h-full absolute md:relative bottom-0 left-0 transition-transform">
+            
+            <!-- 스마트폰 바텀시트 드래그 핸들 (모바일 전용) -->
+            <div id="bottomSheetHandle" class="md:hidden pt-2 pb-1.5 px-4 cursor-pointer flex flex-col items-center flex-shrink-0 bg-white rounded-t-3xl border-b border-slate-100" onclick="toggleBottomSheet()">
+                <div class="w-12 h-1.5 bg-slate-300 hover:bg-slate-400 rounded-full mb-1.5 transition"></div>
+                <div class="flex items-center justify-between w-full text-xs text-slate-700 font-bold px-1">
+                    <span class="flex items-center gap-1.5 truncate">
+                        <i class="fa-solid fa-square-parking text-blue-600"></i>
+                        <span id="mobileSummaryLabel">주차장 목록 열기 (탭/드래그)</span>
+                    </span>
+                    <span class="text-blue-600 font-black ml-2" id="mobileSummaryCount">18,811개소</span>
+                </div>
+            </div>
+
+            <!-- 필터 패널 -->
+            <div class="p-3 md:p-3.5 border-b border-slate-200 bg-slate-50 space-y-2.5 flex-shrink-0">
+                <!-- 3대 유형 탭 (무료 / 공영 / 유료) -->
+                <div>
+                    <div class="text-[10px] md:text-[11px] font-bold text-slate-400 mb-1 uppercase tracking-wider flex items-center justify-between">
+                        <span>유형별 보기</span>
+                        <span class="text-blue-600 font-bold" id="totalDbStatsLabel">18,811개 데이터</span>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1 bg-slate-200/80 p-1 rounded-xl text-xs font-bold">
+                        <button onclick="setParkingTypeFilter('all')" id="tab-all" class="type-tab py-1.5 rounded-lg bg-slate-900 text-white shadow-sm transition">
+                            전체 <span class="text-[10px] opacity-80" id="tabCountAll">1.9만</span>
+                        </button>
+                        <button onclick="setParkingTypeFilter('free')" id="tab-free" class="type-tab py-1.5 rounded-lg bg-white text-slate-700 hover:text-emerald-600 transition">
+                            🟢 무료 <span class="text-[10px] opacity-80" id="tabCountFree">1.4만</span>
+                        </button>
+                        <button onclick="setParkingTypeFilter('public')" id="tab-public" class="type-tab py-1.5 rounded-lg bg-white text-slate-700 hover:text-blue-600 transition">
+                            🔵 공영 <span class="text-[10px] opacity-80" id="tabCountPublic">4.5천</span>
+                        </button>
+                        <button onclick="setParkingTypeFilter('paid')" id="tab-paid" class="type-tab py-1.5 rounded-lg bg-white text-slate-700 hover:text-amber-600 transition">
+                            🟠 유료 <span class="text-[10px] opacity-80" id="tabCountPaid">946</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 반경 & 정렬 옵션 -->
+                <div class="flex items-center justify-between gap-2 pt-0.5">
+                    <div class="flex items-center gap-1.5 flex-1">
+                        <span class="text-[11px] font-bold text-slate-500 whitespace-nowrap">반경:</span>
+                        <select id="radiusSelect" onchange="changeRadius(this.value)" class="bg-white border border-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none flex-1">
+                            <option value="all">전국 전체 (제한없음)</option>
+                            <option value="1000">주변 1km</option>
+                            <option value="3000" selected>주변 3km</option>
+                            <option value="5000">주변 5km</option>
+                            <option value="10000">주변 10km</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                        <select id="sortSelect" onchange="changeSort(this.value)" class="bg-white border border-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none">
+                            <option value="price_asc">요금 저렴순</option>
+                            <option value="distance">거리 가까운순</option>
+                            <option value="capacity">주차공간 많은순</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 주요 권역 칩 버튼 -->
+                <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-xs">
+                    <button onclick="showRegion('all')" class="region-chip px-2 py-0.5 rounded-md font-bold bg-slate-800 text-white whitespace-nowrap">전국</button>
+                    <button onclick="showRegion('서울')" class="region-chip px-2 py-0.5 rounded-md font-medium bg-white text-slate-700 border border-slate-200 whitespace-nowrap">서울</button>
+                    <button onclick="showRegion('경기')" class="region-chip px-2 py-0.5 rounded-md font-medium bg-white text-slate-700 border border-slate-200 whitespace-nowrap">경기</button>
+                    <button onclick="showRegion('인천')" class="region-chip px-2 py-0.5 rounded-md font-medium bg-white text-slate-700 border border-slate-200 whitespace-nowrap">인천</button>
+                    <button onclick="showRegion('부산')" class="region-chip px-2 py-0.5 rounded-md font-medium bg-white text-slate-700 border border-slate-200 whitespace-nowrap">부산</button>
+                    <button onclick="showRegion('대구')" class="region-chip px-2 py-0.5 rounded-md font-medium bg-white text-slate-700 border border-slate-200 whitespace-nowrap">대구</button>
+                    <button onclick="showRegion('대전')" class="region-chip px-2 py-0.5 rounded-md font-medium bg-white text-slate-700 border border-slate-200 whitespace-nowrap">대전</button>
+                    <button onclick="showRegion('광주')" class="region-chip px-2 py-0.5 rounded-md font-medium bg-white text-slate-700 border border-slate-200 whitespace-nowrap">광주</button>
+                    <button onclick="showRegion('강원')" class="region-chip px-2 py-0.5 rounded-md font-medium bg-white text-slate-700 border border-slate-200 whitespace-nowrap">강원</button>
+                    <button onclick="showRegion('제주')" class="region-chip px-2 py-0.5 rounded-md font-medium bg-white text-slate-700 border border-slate-200 whitespace-nowrap">제주</button>
+                </div>
+            </div>
+
+            <!-- 검색 결과 알림 바 (검색 시 표시) -->
+            <div id="searchResultNotification" class="hidden px-3.5 py-2 bg-blue-50 border-b border-blue-200 text-xs flex items-center justify-between text-blue-900">
+                <span id="searchResultNotificationText" class="font-extrabold truncate"></span>
+                <button onclick="showAllNationwideLots()" class="text-blue-600 hover:text-blue-800 font-bold ml-2 underline text-[11px] whitespace-nowrap">
+                    전체보기
+                </button>
+            </div>
+
+            <!-- 주차장 카드 스크롤 영역 -->
+            <div id="parkingListContainer" class="flex-1 overflow-y-auto p-3 space-y-2.5 bg-slate-50/50 safe-bottom"></div>
+        </aside>
+
+        <!-- ============================================== -->
+        <!-- 우측 전체 지도 및 웹 자체 내비게이션 영역 -->
+        <!-- ============================================== -->
+        <section class="flex-1 relative h-full w-full min-h-0 overflow-hidden">
+            <!-- 지도 컨테이너 (클린 화이트톤) -->
+            <div id="map-wrapper">
+                <div id="map"></div>
+            </div>
+
+            <!-- 스마트폰 전용: 지도 ⇋ 목록 토글 플로팅 알약 버튼 -->
+            <div class="md:hidden absolute bottom-24 left-1/2 -translate-x-1/2 z-20">
+                <button onclick="toggleBottomSheet()" id="mobileListToggleBtn" class="bg-slate-900/90 text-white font-extrabold text-xs px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2 border border-slate-700 transition active:scale-95">
+                    <i id="mobileListToggleIcon" class="fa-solid fa-list"></i>
+                    <span id="mobileListToggleText">목록 보기 (1.9만)</span>
+                </button>
+            </div>
+
+            <!-- 일반 모드 플로팅 컨트롤 (클린 화이트톤 디자인) -->
+            <div id="normalControls" class="contents">
+                <!-- 지도 테마 원터치 전환 플로팅 필 (국토부 표준 / 클린 화이트 / 항공 위성) -->
+                <div class="absolute top-3 right-3 md:top-4 md:right-4 z-[500] flex items-center bg-white/95 backdrop-blur-md rounded-2xl p-1 shadow-lg border border-slate-200/90 text-[11px] font-bold">
+                    <button onclick="switchMapTheme('standard')" id="pillThemeStandard" class="px-2.5 py-1.5 rounded-xl transition flex items-center gap-1.5 bg-blue-600 text-white shadow-xs font-black">
+                        <i class="fa-solid fa-map text-amber-300"></i> <span>🗺️ 표준 지도</span>
+                    </button>
+                    <button onclick="switchMapTheme('white')" id="pillThemeWhite" class="px-2.5 py-1.5 rounded-xl transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900 font-bold">
+                        <i class="fa-solid fa-sun text-slate-400"></i> <span>⚪ 클린 화이트</span>
+                    </button>
+                    <button onclick="switchMapTheme('satellite')" id="pillThemeSatellite" class="px-2.5 py-1.5 rounded-xl transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900 font-bold">
+                        <i class="fa-solid fa-satellite text-emerald-500"></i> <span>🛰️ 항공 위성</span>
+                    </button>
+                </div>
+
+                <div class="absolute bottom-6 right-3 md:right-4 z-10 flex flex-col gap-2">
+                    <!-- 스마트폰 QR 플로팅 버튼 -->
+                    <button onclick="openMobileConnectModal()" title="스마트폰 연결 QR코드 열기"
+                        class="w-10 h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg flex items-center justify-center transition active:scale-95 border border-indigo-400">
+                        <i class="fa-solid fa-qrcode text-base"></i>
+                    </button>
+
+                    <!-- 전국 전체 보기 플로팅 버튼 -->
+                    <button onclick="showAllNationwideLots()" title="전국 모든 주차장 전체보기"
+                        class="w-10 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg flex items-center justify-center transition active:scale-95">
+                        <i class="fa-solid fa-earth-asia text-sm md:text-base"></i>
+                    </button>
+
+                    <!-- 내 위치 찾기 버튼 -->
+                    <button onclick="getUserCurrentLocation()" title="현재 내 GPS 위치로 이동"
+                        class="w-10 h-10 rounded-xl bg-white hover:bg-slate-50 text-blue-600 shadow-md border border-slate-200 flex items-center justify-center transition active:scale-95">
+                        <i class="fa-solid fa-location-crosshairs text-base"></i>
+                    </button>
+
+                    <!-- 줌 인/아웃 -->
+                    <div class="flex flex-col bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
+                        <button onclick="zoomMap(1)" title="확대" class="w-10 h-10 hover:bg-slate-50 text-slate-700 flex items-center justify-center border-b border-slate-100">
+                            <i class="fa-solid fa-plus text-xs"></i>
+                        </button>
+                        <button onclick="zoomMap(-1)" title="축소" class="w-10 h-10 hover:bg-slate-50 text-slate-700 flex items-center justify-center">
+                            <i class="fa-solid fa-minus text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+        <!-- ============================================== -->
+    <!-- 🌟 스마트폰 & PC 겸용 원터치 주차장 대시보드 (최상위 고정 레이어) 🌟 -->
+    <!-- ============================================== -->
+    <div id="parkingDetailDashboard" class="hidden fixed bottom-0 left-0 right-0 md:bottom-5 md:left-5 md:right-auto md:w-[440px] z-[99999] animate-in fade-in slide-in-from-bottom-5 duration-200 safe-bottom">
+        <div class="bg-white/98 backdrop-blur-2xl rounded-t-3xl md:rounded-3xl p-4 md:p-5 shadow-[0_-10px_35px_rgba(0,0,0,0.22)] md:shadow-2xl border border-slate-200/90 text-slate-800 flex flex-col gap-3">
+            
+            <!-- 스마트폰 바텀시트 손잡이 (터치 닫기 힌트) -->
+            <div class="md:hidden flex justify-center -mt-1 -mb-1 cursor-pointer py-1" onclick="closeParkingDashboard()">
+                <div class="w-10 h-1.5 bg-slate-300 hover:bg-slate-400 rounded-full transition"></div>
+            </div>
+
+            <!-- 헤더: 주차장명, 배지, 닫기 버튼 -->
+            <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+                        <span id="dashTypeBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-600 text-white shadow-2xs">공영</span>
+                        <span id="dashDistBadge" class="text-[10px] font-extrabold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                            <i class="fa-solid fa-location-dot"></i> 250m
+                        </span>
+                        <span id="dashCapacityBadge" class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                            120면
+                        </span>
+                        <span id="dashTimeBadge" class="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                            24시간
+                        </span>
+                    </div>
+                    <h3 id="dashTitle" class="font-black text-slate-900 text-base md:text-lg truncate">주차장 이름</h3>
+                    <p id="dashAddress" class="text-xs text-slate-500 truncate mt-0.5 flex items-center gap-1">
+                        <i class="fa-solid fa-location-dot text-slate-400 text-[10px]"></i>
+                        <span class="truncate">주소 정보</span>
+                    </p>
+                </div>
+                <button onclick="closeParkingDashboard()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center flex-shrink-0 transition active:scale-95" title="대시보드 닫기">
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+            </div>
+
+            <!-- 요금 배너: 1시간 및 10분당 요금 (가장 중요한 정보 직관적 부각) -->
+            <div class="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/80">
+                <div class="bg-white p-2.5 rounded-xl border border-sky-100 shadow-2xs">
+                    <div class="text-[10px] font-extrabold text-sky-800 flex items-center gap-1">
+                        <i class="fa-solid fa-clock text-blue-600"></i> 1시간 주차 요금
+                    </div>
+                    <div id="dashHourlyFee" class="text-sm md:text-base font-black text-sky-700 mt-0.5">1시간 3,000원</div>
+                </div>
+                <div class="bg-white p-2.5 rounded-xl border border-amber-100 shadow-2xs">
+                    <div class="text-[10px] font-extrabold text-amber-800 flex items-center gap-1">
+                        <i class="fa-solid fa-stopwatch text-amber-600"></i> 10분당 환산 요금
+                    </div>
+                    <div id="dashTenMinFee" class="text-sm md:text-base font-black text-amber-700 mt-0.5">10분 약 500원</div>
+                </div>
+            </div>
+
+            <!-- 🚀 스마트폰 1초 원터치 내비 3대장 길찾기 버튼 (스마트폰 앱 직접 연결) -->
+            <div>
+                <div class="text-[11px] font-black text-slate-700 mb-1.5 flex items-center justify-between">
+                    <span class="flex items-center gap-1.5 font-black text-slate-800">
+                        <i class="fa-solid fa-diamond-turn-right text-blue-600"></i> 스마트폰 1초 원터치 길안내
+                    </span>
+                    <span class="text-[10px] text-slate-400 font-semibold">내비 앱 즉시 실행</span>
+                </div>
+                <div class="grid grid-cols-3 gap-1.5">
+                    <button onclick="openSmartNavi('kakao')" class="py-2.5 px-2 bg-[#FEE500] hover:bg-[#ebd300] active:scale-95 text-[#191919] font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition">
+                        <span class="text-sm">🟡</span> <span>카카오내비</span>
+                    </button>
+                    <button onclick="openSmartNavi('naver')" class="py-2.5 px-2 bg-[#03C75A] hover:bg-[#02b351] active:scale-95 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition">
+                        <span class="text-sm">🟢</span> <span>네이버 지도</span>
+                    </button>
+                    <button onclick="openSmartNavi('tmap')" class="py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition">
+                        <span class="text-sm">🔴</span> <span>티맵</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 하단 보조 액션: 전화 걸기 & 주소 복사 & 상세 요금 계산기 열기 -->
+            <div class="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100">
+                <a id="dashPhoneBtn" href="tel:02-120" class="py-2 px-1 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1">
+                    <i class="fa-solid fa-phone text-blue-600"></i> <span>전화</span>
+                </a>
+                <button onclick="copyCurrentParkingAddress()" class="py-2 px-1 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1">
+                    <i class="fa-regular fa-copy text-indigo-600"></i> <span>주소 복사</span>
+                </button>
+                <button onclick="openDetailModalForCurrent()" class="py-2 px-1 bg-slate-900 hover:bg-black active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-sm">
+                    <i class="fa-solid fa-calculator text-amber-300"></i> <span>요금표</span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 주소 복사 알림 토스트 (스마트폰 최적화) -->
+    <div id="appToast" class="fixed top-14 left-1/2 -translate-x-1/2 z-[1000000] bg-slate-900/90 text-white text-xs font-bold px-4 py-2 rounded-full shadow-2xl backdrop-blur-md transition-all duration-300 opacity-0 pointer-events-none flex items-center gap-2">
+        <i class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toastMsg">주소가 클립보드에 복사되었습니다!</span>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- 최상위 모달 팝업들 (z-index: 999999로 절대 지도에 안 가림) -->
+    <!-- ============================================== -->
+
+    <!-- 1. 주차장 상세 모달 (스마트폰 최적화 & 네이티브 앱 딥링크) -->
+    <div id="detailModal" class="app-modal-overlay fixed inset-0 bg-slate-900/70 backdrop-blur-sm hidden items-center justify-center p-3 md:p-4" style="z-index: 999999 !important; display: none;">
+        <div class="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
+            <!-- 모달 헤더 -->
+            <div class="p-4 md:p-5 bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 text-white flex items-start justify-between">
+                <div>
+                    <div class="flex items-center gap-1.5 mb-1">
+                        <span id="modalTypeBadge" class="px-2 py-0.5 rounded text-[10px] md:text-[11px] font-bold bg-amber-500 text-white">공영주차장</span>
+                        <span id="modalCapacityBadge" class="text-xs text-slate-300">총 120면</span>
+                    </div>
+                    <h2 id="modalTitle" class="text-lg md:text-xl font-extrabold tracking-tight">주차장 이름</h2>
+                    <p id="modalAddress" class="text-xs text-slate-300 mt-1 flex items-center gap-1">
+                        <i class="fa-solid fa-location-dot text-slate-400"></i> 주소 정보
+                    </p>
+                </div>
+                <button onclick="closeDetailModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- 모달 내용 -->
+            <div class="p-4 md:p-5 overflow-y-auto space-y-3.5 text-sm text-slate-700">
+                <!-- 1시간 & 10분 정밀 요금 2단 배너 (분당 환산 요금 즉시 표시) -->
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="p-3 rounded-2xl bg-gradient-to-br from-sky-50 to-blue-50/80 border border-sky-200 shadow-2xs">
+                        <div class="text-[10px] md:text-[11px] font-extrabold text-sky-900 flex items-center gap-1">
+                            <i class="fa-solid fa-clock text-blue-600"></i> 1시간 주차 요금
+                        </div>
+                        <div id="modalHourlyFeeMain" class="text-lg md:text-xl font-black text-sky-700 mt-0.5">1시간 3,000원</div>
+                        <div id="modalHourlySubText" class="text-[10px] text-sky-600 font-semibold mt-0.5">60분 체류 기준</div>
+                    </div>
+                    <div class="p-3 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50/80 border border-amber-200 shadow-2xs">
+                        <div class="text-[10px] md:text-[11px] font-extrabold text-amber-900 flex items-center gap-1">
+                            <i class="fa-solid fa-stopwatch text-amber-600"></i> 10분당 환산 요금
+                        </div>
+                        <div id="modalTenMinFeeMain" class="text-lg md:text-xl font-black text-amber-700 mt-0.5">10분 500원</div>
+                        <div id="modalPerMinuteSubText" class="text-[10px] text-amber-600 font-semibold mt-0.5">1분당 약 50원</div>
+                    </div>
+                </div>
+
+                <!-- 🌟 주요 체류시간별 즉시 확인 요금표 (10분 / 30분 / 1시간 / 2시간 / 1일 최대) -->
+                <div class="bg-slate-50/90 rounded-2xl p-3 border border-slate-200">
+                    <div class="text-[11px] font-bold text-slate-700 mb-2 flex items-center justify-between">
+                        <span class="flex items-center gap-1.5 font-black text-slate-800">
+                            <i class="fa-solid fa-list-check text-blue-600"></i> 체류시간대별 요금 빠른 확인
+                        </span>
+                        <span class="text-[10px] text-slate-400 font-medium">부가세 포함</span>
+                    </div>
+                    <div class="grid grid-cols-5 gap-1 text-center text-xs">
+                        <div class="bg-white p-2 rounded-xl border border-slate-200 shadow-2xs">
+                            <div class="text-slate-400 text-[10px] font-semibold">10분</div>
+                            <div id="quickFee10m" class="font-black text-slate-800 text-[11px] mt-0.5">500원</div>
+                        </div>
+                        <div class="bg-white p-2 rounded-xl border border-slate-200 shadow-2xs">
+                            <div class="text-slate-400 text-[10px] font-semibold">30분</div>
+                            <div id="quickFee30m" class="font-black text-slate-800 text-[11px] mt-0.5">1,500원</div>
+                        </div>
+                        <div class="bg-white p-2 rounded-xl border border-blue-200 bg-blue-50/40 shadow-2xs">
+                            <div class="text-blue-600 text-[10px] font-black">1시간</div>
+                            <div id="quickFee60m" class="font-black text-blue-700 text-[11px] mt-0.5">3,000원</div>
+                        </div>
+                        <div class="bg-white p-2 rounded-xl border border-slate-200 shadow-2xs">
+                            <div class="text-slate-400 text-[10px] font-semibold">2시간</div>
+                            <div id="quickFee120m" class="font-black text-slate-800 text-[11px] mt-0.5">6,000원</div>
+                        </div>
+                        <div class="bg-white p-2 rounded-xl border border-amber-200 bg-amber-50/40 shadow-2xs">
+                            <div class="text-amber-700 text-[10px] font-black">1일최대</div>
+                            <div id="quickFeeDaily" class="font-black text-amber-700 text-[11px] mt-0.5">25,000원</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 요금 부과 기준 -->
+                <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between">
+                    <span class="text-slate-500 font-medium">요금 부과 기준:</span>
+                    <span id="modalRateDetail" class="font-extrabold text-slate-800 truncate ml-2">기본 30분 1,500원 / 추가 10분당 500원</span>
+                </div>
+
+                <!-- 3단 요금 구조 -->
+                <div class="grid grid-cols-3 gap-1.5 md:gap-2 text-center text-xs">
+                    <div class="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <div class="text-slate-400 text-[10px]">기본 요금</div>
+                        <div id="modalBaseFee" class="font-extrabold text-slate-800 mt-0.5 text-xs">30분 1,500원</div>
+                    </div>
+                    <div class="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <div class="text-slate-400 text-[10px]">추가 요금</div>
+                        <div id="modalExtraFee" class="font-extrabold text-slate-800 mt-0.5 text-xs">10분당 500원</div>
+                    </div>
+                    <div class="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <div class="text-slate-400 text-[10px]">1일 최대요금</div>
+                        <div id="modalDailyFee" class="font-extrabold text-blue-600 mt-0.5 text-xs">25,000원</div>
+                    </div>
+                </div>
+
+                <!-- 체류시간별 실시간 정밀 요금 계산기 -->
+                <div class="bg-gradient-to-br from-slate-50 to-blue-50/30 rounded-2xl p-4 border border-blue-200/60 shadow-sm space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="flex items-center gap-1.5 text-xs font-black text-slate-900">
+                            <i class="fa-solid fa-calculator text-blue-600 text-sm"></i> 체류시간별 정밀 주차비 계산기
+                        </span>
+                        <span id="calculatedFeeResult" class="text-blue-700 font-black text-base md:text-lg">3,000원</span>
+                    </div>
+
+                    <!-- 빠른 시간 프리셋 버튼 -->
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <button type="button" onclick="setDurationPreset(10)" class="px-2.5 py-1 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg text-[11px] font-bold border border-slate-200 transition">10분</button>
+                        <button type="button" onclick="setDurationPreset(30)" class="px-2.5 py-1 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg text-[11px] font-bold border border-slate-200 transition">30분</button>
+                        <button type="button" onclick="setDurationPreset(60)" class="px-2.5 py-1 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg text-[11px] font-bold border border-slate-200 transition">1시간</button>
+                        <button type="button" onclick="setDurationPreset(120)" class="px-2.5 py-1 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg text-[11px] font-bold border border-slate-200 transition">2시간</button>
+                        <button type="button" onclick="setDurationPreset(180)" class="px-2.5 py-1 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg text-[11px] font-bold border border-slate-200 transition">3시간</button>
+                        <button type="button" onclick="setDurationPreset(300)" class="px-2.5 py-1 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg text-[11px] font-bold border border-slate-200 transition">5시간</button>
+                        <button type="button" onclick="setDurationPreset(1440)" class="px-2.5 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg text-[11px] font-black border border-blue-300 transition">1일 종일</button>
+                    </div>
+
+                    <!-- 슬라이더 및 증감 버튼 -->
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="adjustDuration(-10)" class="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100 flex items-center justify-center text-xs">-10</button>
+                        <input type="range" id="parkingDurationSlider" min="10" max="720" step="10" value="60" oninput="updateCalculatedFee()" class="flex-1 accent-blue-600 cursor-pointer h-2 bg-slate-200 rounded-lg">
+                        <button type="button" onclick="adjustDuration(10)" class="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100 flex items-center justify-center text-xs">+10</button>
+                        <span id="parkingDurationText" class="text-xs font-black bg-white px-2.5 py-1 rounded-lg border border-blue-200 text-blue-700 whitespace-nowrap min-w-[70px] text-center shadow-xs">1시간 00분</span>
+                    </div>
+
+                    <!-- 정밀 산출 공식 명세 -->
+                    <div class="bg-white/80 rounded-xl p-2.5 border border-slate-200/80 text-[11px] text-slate-600">
+                        <div class="text-[10px] font-bold text-slate-400 mb-0.5"><i class="fa-solid fa-receipt text-blue-500"></i> 요금 산출 공식 내역</div>
+                        <div id="feeBreakdownDetail" class="font-medium text-slate-700 leading-relaxed">
+                            기본 30분(1,500원) + 추가 30분(10분 단위 3회 × 500원 = 1,500원) = 3,000원
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 운영 시간 상세 -->
+                <div class="space-y-1 text-xs">
+                    <h3 class="font-bold text-slate-900 flex items-center gap-1.5">
+                        <i class="fa-regular fa-clock text-blue-600"></i> 운영 시간
+                    </h3>
+                    <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-200 space-y-1 text-[11px]">
+                        <div class="flex justify-between"><span class="text-slate-500">평일</span> <span id="modalWeekdayTime" class="font-semibold text-slate-800">24시간</span></div>
+                        <div class="flex justify-between"><span class="text-slate-500">토요일</span> <span id="modalSaturdayTime" class="font-semibold text-slate-800">24시간</span></div>
+                        <div class="flex justify-between"><span class="text-slate-500">일/공휴일</span> <span id="modalHolidayTime" class="font-semibold text-slate-800">운영</span></div>
+                    </div>
+                </div>
+
+                <!-- 전화 걸기 버튼 (모바일 친화적) -->
+                <div class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                    <div class="flex items-center gap-1.5">
+                        <i class="fa-solid fa-phone text-slate-400"></i>
+                        <span id="modalPhoneText" class="font-semibold text-slate-800">02-120</span>
+                    </div>
+                    <a id="modalPhoneBtn" href="tel:" class="px-3 py-1 bg-blue-600 text-white font-bold rounded-lg text-xs shadow-sm">
+                        📞 전화 걸기
+                    </a>
+                </div>
+            </div>
+
+            <!-- 모달 푸터: 스마트폰 원터치 내비 앱 바로가기 (1초 연동) -->
+            <div class="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-col gap-2 safe-bottom">
+                <div class="text-[11px] font-black text-slate-700 flex items-center justify-between">
+                    <span class="flex items-center gap-1.5"><i class="fa-solid fa-diamond-turn-right text-blue-600"></i> 스마트폰 내비 앱으로 길안내 시작</span>
+                    <span class="text-[10px] text-slate-400">1터치 즉시 연결</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <button onclick="openSmartNavi('kakao')" class="py-3 bg-[#FEE500] hover:bg-[#ebd300] active:scale-95 text-[#191919] font-black text-xs md:text-sm rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition">
+                        <span class="text-base">🟡</span> <span>카카오내비</span>
+                    </button>
+                    <button onclick="openSmartNavi('naver')" class="py-3 bg-[#03C75A] hover:bg-[#02b351] active:scale-95 text-white font-black text-xs md:text-sm rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition">
+                        <span class="text-base">🟢</span> <span>네이버 지도</span>
+                    </button>
+                    <button onclick="openSmartNavi('tmap')" class="py-3 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-xs md:text-sm rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition">
+                        <span class="text-base">🔴</span> <span>티맵</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. 스마트폰 어플 다운로드 & 즉시 설치 QR 모달 -->
+    <div id="mobileConnectModal" class="app-modal-overlay fixed inset-0 bg-slate-900/70 backdrop-blur-sm hidden items-center justify-center p-3 md:p-4" style="z-index: 999999 !important; display: none;">
+        <div class="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <!-- 모달 상단 헤더 -->
+            <div class="p-4 md:p-5 bg-gradient-to-r from-indigo-900 via-slate-900 to-slate-900 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-500 text-white flex items-center justify-center text-xl shadow-md border border-indigo-300/30 font-black">
+                        P
+                    </div>
+                    <div>
+                        <h3 class="font-extrabold text-sm md:text-base tracking-tight flex items-center gap-1.5">
+                            <span>휴대폰 앱 다운로드 QR</span>
+                            <span class="bg-emerald-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">PWA 어플</span>
+                        </h3>
+                        <p class="text-[11px] text-indigo-200">카메라로 비추면 스마트폰에 앱이 다운로드/설치됩니다</p>
+                    </div>
+                </div>
+                <button onclick="closeMobileConnectModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- 모달 본문 -->
+            <div class="p-4 md:p-5 space-y-3.5 text-xs text-slate-700 max-h-[80vh] overflow-y-auto">
+                <!-- 인터넷 웹 vs 로컬 Wi-Fi 전환 탭 -->
+                <div class="bg-slate-100 p-1 rounded-xl flex items-center gap-1">
+                    <button id="btnQrModeInternet" onclick="switchQrMode('internet')" class="flex-1 py-1.5 rounded-lg font-black text-xs bg-indigo-600 text-white shadow-xs transition flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-globe"></i> <span>인터넷 웹앱 (어디서나 설치)</span>
+                    </button>
+                    <button id="btnQrModeLocal" onclick="switchQrMode('local')" class="flex-1 py-1.5 rounded-lg font-bold text-xs text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-wifi"></i> <span>로컬 Wi-Fi</span>
+                    </button>
+                </div>
+
+                <!-- QR 코드 렌더링 영역 (선명한 중앙 프레임) -->
+                <div class="flex flex-col items-center justify-center bg-gradient-to-b from-slate-50 to-indigo-50/30 p-4 rounded-2xl border border-slate-200">
+                    <div id="qrCodeContainer" class="p-3 bg-white rounded-2xl shadow-lg border border-slate-200/80 flex items-center justify-center min-w-[190px] min-h-[190px]"></div>
+                    <div class="mt-3 text-center w-full px-2">
+                        <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">앱 다운로드 / 접속 주소</div>
+                        <a id="qrUrlLink" href="https://dd5650.github.io/parkingnow/" target="_blank" class="font-extrabold text-indigo-600 text-xs md:text-sm hover:underline break-all">
+                            https://dd5650.github.io/parkingnow/
+                        </a>
+                        <input type="hidden" id="mobileConnectIpInput" value="https://dd5650.github.io/parkingnow/">
+                    </div>
+                </div>
+
+                <!-- 원클릭 주소 복사 & 바로가기 버튼 -->
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="copyQrUrl()" class="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5">
+                        <i class="fa-regular fa-copy text-indigo-600"></i> <span>다운로드 주소 복사</span>
+                    </button>
+                    <a id="qrDirectOpenBtn" href="https://dd5650.github.io/parkingnow/" target="_blank" class="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> <span>브라우저로 열기</span>
+                    </a>
+                </div>
+
+                <!-- 스마트폰 초간편 설치 2단계 안내 -->
+                <div class="bg-indigo-50/60 rounded-2xl p-3.5 border border-indigo-100 space-y-2">
+                    <div class="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                        <i class="fa-solid fa-circle-check text-indigo-600"></i> 스마트폰 어플 다운로드 & 설치 방법
+                    </div>
+                    <div class="space-y-1.5 text-[11px] text-slate-600 leading-snug">
+                        <div class="flex items-start gap-1.5">
+                            <span class="w-4 h-4 rounded-full bg-indigo-200 text-indigo-800 flex items-center justify-center text-[10px] font-black flex-shrink-0 mt-0.5">1</span>
+                            <div>스마트폰 기본 <strong>카메라 앱</strong>으로 위의 QR 코드를 비추면 주소 링크가 팝업됩니다.</div>
+                        </div>
+                        <div class="flex items-start gap-1.5">
+                            <span class="w-4 h-4 rounded-full bg-indigo-200 text-indigo-800 flex items-center justify-center text-[10px] font-black flex-shrink-0 mt-0.5">2</span>
+                            <div>
+                                브라우저가 열리면 화면의 <strong>[앱 설치]</strong> 버튼을 누르거나,
+                                <div class="mt-0.5 pl-1 text-[10px] text-slate-500">
+                                    • <strong>갤럭시:</strong> 메뉴(⋮) ➔ <span class="text-indigo-700 font-bold">'앱 설치'</span> 터치<br>
+                                    • <strong>아이폰:</strong> 하단 공유(⬆️) ➔ <span class="text-indigo-700 font-bold">'홈 화면에 추가'</span> 터치
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 모달 하단 닫기 -->
+            <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button onclick="closeMobileConnectModal()" class="px-5 py-2 text-xs font-black bg-slate-900 text-white rounded-xl shadow-sm hover:bg-black transition">
+                    닫기
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🌟 PWA 스마트폰 앱 설치 안내 모달 (아이폰/안드로이드 친화적) 🌟 -->
+    <div id="pwaInstallGuideModal" class="app-modal-overlay fixed inset-0 bg-slate-900/70 backdrop-blur-sm hidden items-center justify-center p-3 md:p-4" style="z-index: 999999 !important; display: none;">
+        <div class="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div class="p-4 md:p-5 bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 text-white flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-xl shadow-inner font-black">
+                        📲
+                    </div>
+                    <div>
+                        <h3 class="font-extrabold text-sm md:text-base tracking-tight">휴대폰에 어플 설치하기</h3>
+                        <p class="text-[11px] text-blue-100">홈 화면에 추가하여 앱처럼 전체화면으로 사용하세요</p>
+                    </div>
+                </div>
+                <button onclick="closePwaInstallGuideModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="p-4 md:p-5 space-y-3.5 text-xs text-slate-700 max-h-[80vh] overflow-y-auto">
+                <!-- 안드로이드 / 갤럭시 안내 -->
+                <div class="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-1.5">
+                    <div class="font-black text-emerald-900 flex items-center gap-1.5 text-xs">
+                        <i class="fa-brands fa-android text-emerald-600 text-sm"></i> 삼성 갤럭시 / 안드로이드 설치 방법
+                    </div>
+                    <ol class="list-decimal pl-4 space-y-1 text-[11px] text-emerald-800 leading-snug">
+                        <li>화면 하단에 뜨는 <strong>[앱 설치]</strong> 또는 <strong>[홈 화면에 추가]</strong> 버튼을 누릅니다.</li>
+                        <li>만약 버튼이 보이지 않는다면, 우측 상단 메뉴(<strong>⋮</strong>) ➔ <strong>[앱 설치]</strong>를 터치합니다.</li>
+                        <li>휴대폰 바탕화면에 <strong>파킹파인더 앱 아이콘</strong>이 자동 생성됩니다!</li>
+                    </ol>
+                </div>
+                <!-- 아이폰 / iOS Safari 안내 -->
+                <div class="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200 space-y-1.5">
+                    <div class="font-black text-sky-900 flex items-center gap-1.5 text-xs">
+                        <i class="fa-brands fa-apple text-slate-900 text-sm"></i> 애플 아이폰 (Safari) 설치 방법
+                    </div>
+                    <ol class="list-decimal pl-4 space-y-1 text-[11px] text-sky-800 leading-snug">
+                        <li>Safari 브라우저 하단 중앙의 <strong>공유(⬆️ 사각형 위 화살표)</strong> 버튼을 누릅니다.</li>
+                        <li>메뉴를 아래로 내려 <strong>[홈 화면에 추가 (➕)]</strong> 항목을 터치합니다.</li>
+                        <li>우측 상단 <strong>[추가]</strong>를 누르면 아이폰 홈 화면에 앱이 설치됩니다!</li>
+                    </ol>
+                </div>
+                <!-- QR 코드 바로 열기 안내 -->
+                <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-center text-slate-600 text-[11px]">
+                    💡 아직 PC에서 보고 계시다면 <button onclick="closePwaInstallGuideModal(); openMobileConnectModal();" class="text-indigo-600 font-bold underline">스마트폰 연결 QR코드</button>를 카메라로 비춰보세요!
+                </div>
+            </div>
+            <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button onclick="closePwaInstallGuideModal()" class="px-4 py-2 text-xs font-black bg-slate-900 text-white rounded-xl shadow-sm hover:bg-black transition">
+                    확인
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. API 키 설정 모달 -->
+    <div id="apiKeyModal" class="app-modal-overlay fixed inset-0 bg-slate-900/70 backdrop-blur-sm hidden items-center justify-center p-4" style="z-index: 999999 !important; display: none;">
+        <div class="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
+            <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-amber-50">
+                <div class="flex items-center gap-2 text-slate-900 font-extrabold text-sm">
+                    <div class="w-6 h-6 rounded bg-[#FEE500] text-slate-950 font-black text-xs flex items-center justify-center">K</div>
+                    <span>카카오 맵 API 키 설정</span>
+                </div>
+                <button onclick="closeApiKeyModal()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-2.5 text-xs text-slate-600">
+                <p class="font-bold text-slate-800">
+                    💡 스마트폰에서도 별도 키 없이 전국 18,811개 주차장과 웹 자체 내비가 100% 정상 작동합니다!
+                </p>
+                <div class="space-y-1 pt-1">
+                    <input type="text" id="kakaoApiKeyInput" placeholder="32자리 JavaScript App Key" 
+                        class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono outline-none">
+                </div>
+            </div>
+            <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+                <button onclick="closeApiKeyModal()" class="px-3 py-1.5 text-xs font-semibold text-slate-600 rounded-xl">닫기</button>
+                <button onclick="saveApiKey()" class="px-3 py-1.5 text-xs font-bold bg-slate-900 text-white rounded-xl">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. 안내 모달 -->
+    <div id="infoModal" class="app-modal-overlay fixed inset-0 bg-slate-900/70 backdrop-blur-sm hidden items-center justify-center p-4" style="z-index: 999999 !important; display: none;">
+        <div class="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
+            <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+                <div class="flex items-center gap-2 text-slate-900 font-extrabold text-sm">
+                    <i class="fa-solid fa-mobile-screen-button text-blue-600"></i>
+                    <span>스마트폰 사용 가이드</span>
+                </div>
+                <button onclick="closeInfoModal()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-2.5 text-xs text-slate-600 leading-relaxed">
+                <div>
+                    <h4 class="font-bold text-slate-900 mb-1">📱 스마트폰 활용 팁</h4>
+                    <ul class="list-disc pl-4 space-y-1">
+                        <li><strong>⚪ 클린 화이트톤 지도:</strong> 눈이 편안한 국토교통부 고해상도 화이트 타일 지도를 지원합니다.</li>
+                        <li><strong>바텀시트 서랍:</strong> 하단 손잡이를 탭하거나 위로 드래그하면 주차장 목록과 지도를 자유롭게 전환할 수 있습니다.</li>
+                        <li><strong>웹 자체 실시간 내비:</strong> 주차장을 선택하고 [웹 내비 시작]을 누르면 실제 주행 안내가 시작되며 음성 안내가 지원됩니다.</li>
+                        <li><strong>화면 꺼짐 방지:</strong> 내비게이션 안내 중에는 스마트폰 화면이 꺼지지 않도록 자동 제어됩니다.</li>
+                        <li><strong>홈 화면에 추가:</strong> 브라우저 메뉴에서 [홈 화면에 추가]를 누르면 스마트폰 앱처럼 전체화면으로 실행할 수 있습니다.</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button onclick="closeInfoModal()" class="px-4 py-1.5 text-xs font-bold bg-slate-900 text-white rounded-xl shadow-sm">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 주차장 데이터 & 웹 자체 내비게이션 스크립트 -->
+    <!-- ========================================== -->
+    <script>
+        // 1. 주요 랜드마크 & 환승 거점 좌표 사전 (정확 검색용)
+        const KOREA_LANDMARKS = [
+            { name: '강남역', alias: ['강남', '강남역사거리', '테헤란로', '역삼'], lat: 37.49795, lng: 127.02761, desc: '서울 강남구' },
+            { name: '홍대입구역', alias: ['홍대', '홍대입구', '서교동', '연남동'], lat: 37.55719, lng: 126.92538, desc: '서울 마포구' },
+            { name: '여의도 한강공원', alias: ['여의도', '여의도공원', '더현대서울', 'IFC', '63빌딩'], lat: 37.52843, lng: 126.93245, desc: '서울 영등포구' },
+            { name: '명동역', alias: ['명동', '을지로', '명동성당', '남산'], lat: 37.56098, lng: 126.98632, desc: '서울 중구' },
+            { name: '잠실역', alias: ['잠실', '롯데월드', '석촌호수', '송리단길', '롯데타워'], lat: 37.51326, lng: 127.10013, desc: '서울 송파구' },
+            { name: '종로/광화문', alias: ['광화문', '종로', '경복궁', '안국', '인사동', '청계천'], lat: 37.57593, lng: 126.97686, desc: '서울 종로구' },
+            { name: '신촌역', alias: ['신촌', '이대', '연세대', '서강대'], lat: 37.55513, lng: 126.93689, desc: '서울 서대문구' },
+            { name: '이태원역', alias: ['이태원', '한남동', '경리단길'], lat: 37.53453, lng: 126.99459, desc: '서울 용산구' },
+            { name: '성수역', alias: ['성수', '성수동', '서울숲', '뚝섬'], lat: 37.54458, lng: 127.05597, desc: '서울 성동구' },
+            { name: '사당역', alias: ['사당', '남현동'], lat: 37.47640, lng: 126.98150, desc: '서울 동작구/서초구' },
+            { name: '신도림역', alias: ['신도림', '디큐브시티'], lat: 37.50882, lng: 126.89121, desc: '서울 구로구' },
+            { name: '영등포역', alias: ['영등포', '타임스퀘어'], lat: 37.51566, lng: 126.90760, desc: '서울 영등포구' },
+            { name: '건대입구역', alias: ['건대', '건대입구', '자양동'], lat: 37.54041, lng: 127.06917, desc: '서울 광진구' },
+            { name: '판교역', alias: ['판교', '판교테크노밸리', '현대백화점판교'], lat: 37.39478, lng: 127.11116, desc: '경기 성남시 분당구' },
+            { name: '서현역', alias: ['서현', '분당'], lat: 37.38515, lng: 127.12327, desc: '경기 성남시 분당구' },
+            { name: '수원역', alias: ['수원', '수원역환승센터', '행궁동', '인계동'], lat: 37.26597, lng: 127.00003, desc: '경기 수원시' },
+            { name: '일산 호수공원', alias: ['일산', '라페스타', '웨스턴돔', '정발산'], lat: 37.65839, lng: 126.76442, desc: '경기 고양시 일산동구' },
+            { name: '인천 송도', alias: ['송도', '송도센트럴파크', '트리플스트리트'], lat: 37.39268, lng: 126.63939, desc: '인천 연수구' },
+            { name: '부평역', alias: ['부평', '부평지하상가'], lat: 37.48950, lng: 126.72480, desc: '인천 부평구' },
+            { name: '해운대해수욕장', alias: ['해운대', '해운대역', '구남로', '엘시티', '동백섬'], lat: 35.15875, lng: 129.15842, desc: '부산 해운대구' },
+            { name: '광안리해수욕장', alias: ['광안리', '민락동', '광안대교'], lat: 35.15340, lng: 129.11890, desc: '부산 수영구' },
+            { name: '서면역', alias: ['서면', '전포카페거리', '부산진구'], lat: 35.15780, lng: 129.05920, desc: '부산 부산진구' },
+            { name: '남포동/자갈치', alias: ['남포동', '자갈치', '국제시장', '영도'], lat: 35.09790, lng: 129.03480, desc: '부산 중구' },
+            { name: '동대구역', alias: ['동대구', '신세계대구'], lat: 35.87780, lng: 128.62920, desc: '대구 동구' },
+            { name: '동성로/반월당', alias: ['동성로', '반월당', '중앙로'], lat: 35.86870, lng: 128.59330, desc: '대구 중구' },
+            { name: '대전역', alias: ['대전역', '중앙시장', '성심당'], lat: 36.33180, lng: 127.43540, desc: '대전 동구' },
+            { name: '대전 둔산동', alias: ['둔산동', '정부청사', '갤러리아타임월드'], lat: 36.35370, lng: 127.37890, desc: '대전 서구' },
+            { name: '광주 상무지구', alias: ['상무지구', '유스퀘어', '광천터미널'], lat: 35.15320, lng: 126.85140, desc: '광주 서구' },
+            { name: '전주 한옥마을', alias: ['전주한옥마을', '전주', '풍남문'], lat: 35.81420, lng: 127.15580, desc: '전북 전주시' },
+            { name: '경주 황리단길', alias: ['황리단길', '경주', '첨성대', '보문단지'], lat: 35.83680, lng: 129.20850, desc: '경북 경주시' },
+            { name: '속초해수욕장', alias: ['속초', '속초관광수산시장', '아바이마을', '속초해변'], lat: 38.19120, lng: 128.60350, desc: '강원 속초시' },
+            { name: '강릉 안목해변', alias: ['강릉', '안목해변', '경포대', '주문진'], lat: 37.77180, lng: 128.94820, desc: '강원 강릉시' },
+            { name: '제주공항/제주시청', alias: ['제주', '제주시', '연동', '노형동', '제주공항'], lat: 33.49960, lng: 126.53120, desc: '제주 제주시' },
+            { name: '서귀포/중문', alias: ['서귀포', '중문', '성산', '올레시장'], lat: 33.25410, lng: 126.56010, desc: '제주 서귀포시' }
+        ];
+
+        // 2. 주차장 데이터
+        let ALL_PARKING_DATA = [];
+
+        function initParkingData() {
+            if (window.PARKING_RAW_DATA && Array.isArray(window.PARKING_RAW_DATA) && window.PARKING_RAW_DATA.length > 0) {
+                console.log(`✅ 공공데이터 전국 표준 주차장 ${window.PARKING_RAW_DATA.length.toLocaleString()}개소 로드 완료`);
+                ALL_PARKING_DATA = window.PARKING_RAW_DATA.map(item => ({
+                    id: item.id,
+                    name: item.n,
+                    type: item.t,
+                    lat: item.lt,
+                    lng: item.lg,
+                    address: item.a || '주소 정보 없음',
+                    hourlyFee: item.h || 0,
+                    tenMinFee: item.tm !== undefined ? item.tm : (item.f === 1 ? 0 : Math.round(item.h / 6)),
+                    baseTime: item.bt || 30,
+                    baseFee: item.bf || 0,
+                    extraTime: item.et || 10,
+                    extraFee: item.ef || 0,
+                    dailyFee: item.df || 0,
+                    capacity: item.c || 30,
+                    isFree: item.f === 1,
+                    phone: item.p || '02-120',
+                    is24h: item.d24 === 1,
+                    weekdayTime: item.d24 === 1 ? '00:00 ~ 24:00 (24시간)' : '08:00 ~ 22:00',
+                    saturdayTime: item.d24 === 1 ? '00:00 ~ 24:00' : '09:00 ~ 18:00',
+                    holidayTime: item.f === 1 ? '상시 무료 개방' : '운영'
+                }));
+            } else {
+                ALL_PARKING_DATA = [
+                    { id: 1, name: '역삼문화공원 공영주차장', type: 'public', lat: 37.50063, lng: 127.03154, address: '서울 강남구 테헤란로7길 32', hourlyFee: 3600, baseTime: 30, baseFee: 1800, extraTime: 10, extraFee: 600, dailyFee: 24000, capacity: 245, isFree: false, phone: '02-2176-0900', is24h: true },
+                    { id: 2, name: '서초 양재천 무지개다리 무료주차장', type: 'free', lat: 37.47891, lng: 127.03845, address: '서울 서초구 양재동 126', hourlyFee: 0, baseTime: 0, baseFee: 0, extraTime: 0, extraFee: 0, dailyFee: 0, capacity: 45, isFree: true, phone: '02-2155-7288', is24h: true },
+                    { id: 3, name: '해운대해수욕장 광장공영주차장', type: 'public', lat: 35.15875, lng: 129.15842, address: '부산 해운대구 우동 621-5', hourlyFee: 1800, baseTime: 30, baseFee: 900, extraTime: 10, extraFee: 300, dailyFee: 15000, capacity: 180, isFree: false, phone: '051-749-4000', is24h: true }
+                ];
+            }
+
+            const freeCount = ALL_PARKING_DATA.filter(p => p.isFree).length;
+            const publicCount = ALL_PARKING_DATA.filter(p => p.type === 'public').length;
+            const paidCount = ALL_PARKING_DATA.filter(p => p.type === 'paid').length;
+
+            document.getElementById('dataCountBadge').innerText = `전국 ${ALL_PARKING_DATA.length.toLocaleString()}개소`;
+            document.getElementById('tabCountAll').innerText = `${(ALL_PARKING_DATA.length / 1000).toFixed(1)}만`;
+            document.getElementById('tabCountFree').innerText = `${(freeCount / 1000).toFixed(1)}만`;
+            document.getElementById('tabCountPublic').innerText = `${(publicCount / 1000).toFixed(1)}천`;
+            document.getElementById('tabCountPaid').innerText = paidCount.toLocaleString();
+            document.getElementById('totalDbStatsLabel').innerText = `${ALL_PARKING_DATA.length.toLocaleString()}개 데이터`;
+            document.getElementById('mobileSummaryCount').innerText = `${ALL_PARKING_DATA.length.toLocaleString()}개소`;
+        }
+
+        // 3. 전역 상태
+        let map;
+        let standardTileLayer = null;
+        let whiteTileLayer = null;
+        let satelliteTileLayer = null;
+        let currentMapTheme = 'standard'; // 'standard' | 'white' | 'satellite'
+        let clusterGroup = null;
+        let currentSearchCenter = { lat: 36.3, lng: 127.8, name: '대한민국 전국 전체' };
+        let isNationwideMode = true;
+        let searchRadius = 'all';
+        let currentTypeFilter = 'all';
+        let currentSort = 'price_asc';
+        let currentRegionFilter = 'all';
+        let filteredParkingList = [];
+        let selectedParking = null;
+        let userCurrentGps = null;
+        let userGpsMarker = null;
+
+        // 스마트폰 바텀시트 상태: 'collapsed' (접힘), 'half' (중간), 'expanded' (전체)
+        let bottomSheetState = 'collapsed';
+
+        // 내비게이션 상태
+        let isNavigating = false;
+        let navigationStartCoords = null;
+        let navigationTarget = null;
+        let routePolyline = null;
+        let carMarker = null;
+        let departMarker = null;
+        let destMarker = null;
+        let naviRouteSteps = [];
+        let naviRouteCoords = [];
+        let simulationInterval = null;
+        let simCurrentIndex = 0;
+        let isVoiceMuted = false;
+        let wakeLock = null;
+        let liveGpsWatchId = null;
+
+        // 4. 앱 초기화 (화이트톤 지도 기본 탑재)
+        function initApp() {
+            initParkingData();
+
+            // 🌟 Leaflet 지도 인스턴스 (줌 경계 6~19 제한으로 맵 소실 원천 차단)
+            map = L.map('map', {
+                center: [36.2, 127.8],
+                zoom: 7,
+                minZoom: 6,
+                maxZoom: 19,
+                zoomControl: false,
+                preferCanvas: false,
+                fadeAnimation: true,
+                zoomAnimation: true
+            });
+
+            // 🗺️ 1. 국토교통부 표준 지도 (VWorld Base) - 공공 표준 초고해상도 지도 (기본값, 워터마크 없음)
+            standardTileLayer = L.tileLayer('https://xdworld.vworld.kr/2d/Base/service/{z}/{x}/{y}.png', {
+                minZoom: 6,
+                maxZoom: 19,
+                attribution: '&copy; VWorld 국토교통부 (공공 표준)',
+                keepBuffer: 6,
+                updateWhenZooming: true,
+                updateWhenIdle: false
+            });
+
+            // ⚪ 2. 국토교통부 클린 화이트 백지도 (VWorld White) - 순백 미니멀 고대비 지도 (워터마크 없음)
+            whiteTileLayer = L.tileLayer('https://xdworld.vworld.kr/2d/white/service/{z}/{x}/{y}.png', {
+                minZoom: 6,
+                maxZoom: 19,
+                attribution: '&copy; VWorld 국토교통부 (클린 화이트)',
+                keepBuffer: 6,
+                updateWhenZooming: true,
+                updateWhenIdle: false
+            });
+
+            // 🛰️ 3. 국토교통부 고해상도 항공 위성 + 하이브리드 라벨
+            const satBase = L.tileLayer('https://xdworld.vworld.kr/2d/Satellite/service/{z}/{x}/{y}.jpeg', {
+                minZoom: 6,
+                maxZoom: 19,
+                keepBuffer: 6,
+                updateWhenZooming: true,
+                updateWhenIdle: false
+            });
+            const satHybrid = L.tileLayer('https://xdworld.vworld.kr/2d/Hybrid/service/{z}/{x}/{y}.png', {
+                minZoom: 6,
+                maxZoom: 19,
+                keepBuffer: 6,
+                updateWhenZooming: true,
+                updateWhenIdle: false
+            });
+            satelliteTileLayer = L.layerGroup([satBase, satHybrid]);
+
+            // 기본 표준 국토교통부 지도 탑재 (워터마크 없이 깨끗하게 즉시 표시)
+            standardTileLayer.addTo(map);
+
+            // 🌟 고성능 마커 클러스터 초기화 (18,198개소 60fps 무결점 렌더링, 줌 크래시 완벽 방지)
+            clusterGroup = L.markerClusterGroup({
+                chunkedLoading: true,
+                chunkInterval: 100,
+                chunkDelay: 10,
+                maxClusterRadius: function(zoom) {
+                    if (zoom >= 17) return 15;
+                    if (zoom >= 15) return 25;
+                    if (zoom >= 13) return 35;
+                    if (zoom >= 10) return 50;
+                    return 65;
+                },
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: false,
+                zoomToBoundsOnClick: true,
+                removeOutsideVisibleBounds: true,
+                animate: true,
+                animateAddingMarkers: false
+            });
+            map.addLayer(clusterGroup);
+
+            // 빈 지도 클릭 시 대시보드 닫기 (마커 터치 직후 500ms 이내 클릭은 무시하여 대시보드 미표출 오류 원천 차단)
+            map.on('click', () => {
+                if (Date.now() - lastMarkerClickTimestamp < 500) {
+                    return;
+                }
+                closeParkingDashboard();
+            });
+
+            // 줌 완료 및 레이아웃 회복 리스너
+            map.on('zoomend', () => {
+                try {
+                    map.invalidateSize(false);
+                } catch(e) {}
+            });
+            map.on('error', (e) => {
+                console.warn('Map runtime event notice:', e);
+                try { map.invalidateSize(false); } catch(err){}
+            });
+
+            renderParkingLots(true);
+            forceRelayoutMap();
+
+            initBottomSheetGestures();
+
+            // 디바운스된 지도 이동/줌 이벤트 (부드러운 반응속도 보장)
+            let moveendDebounceTimer = null;
+            map.on('moveend', () => {
+                if (isNationwideMode && !isNavigating) {
+                    if (moveendDebounceTimer) clearTimeout(moveendDebounceTimer);
+                    moveendDebounceTimer = setTimeout(() => {
+                        syncSidebarWithVisibleBounds();
+                    }, 120);
+                }
+            });
+
+            // 페이지 로드 시 백그라운드로 내 GPS 획득 시도 (거부되더라도 오류창 없이 조용히)
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        userCurrentGps = [pos.coords.latitude, pos.coords.longitude];
+                        console.log('📍 내 현재 GPS 위치 확인됨:', userCurrentGps);
+                    },
+                    err => console.log('초기 GPS 권한 대기'),
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+                );
+            }
+        }
+
+        // 화이트톤 ⇋ 표준 지도 테마 전환
+        function toggleMapTheme() {
+            if (currentMapTheme === 'standard') {
+                switchMapTheme('white');
+            } else if (currentMapTheme === 'white') {
+                switchMapTheme('satellite');
+            } else {
+                switchMapTheme('standard');
+            }
+        }
+
+        function switchMapTheme(themeName) {
+            currentMapTheme = themeName;
+            [standardTileLayer, whiteTileLayer, satelliteTileLayer].forEach(layer => {
+                if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+            });
+
+            const textEl = document.getElementById('themeToggleText');
+            if (themeName === 'standard') {
+                standardTileLayer.addTo(map);
+                if (textEl) textEl.innerText = '🗺️ 표준 지도';
+            } else if (themeName === 'white') {
+                whiteTileLayer.addTo(map);
+                if (textEl) textEl.innerText = '⚪ 클린 화이트';
+            } else if (themeName === 'satellite') {
+                satelliteTileLayer.addTo(map);
+                if (textEl) textEl.innerText = '🛰️ 항공 위성';
+            }
+
+            // 플로팅 테마 선택 필 동기화
+            ['standard', 'white', 'satellite'].forEach(t => {
+                const btn = document.getElementById('pillTheme' + t.charAt(0).toUpperCase() + t.slice(1));
+                if (btn) {
+                    if (t === themeName) {
+                        btn.className = 'px-2.5 py-1.5 rounded-xl transition flex items-center gap-1.5 bg-blue-600 text-white shadow-xs font-black';
+                    } else {
+                        btn.className = 'px-2.5 py-1.5 rounded-xl transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900 font-bold';
+                    }
+                }
+            });
+        }
+
+        function forceRelayoutMap() {
+            [50, 150, 350, 800].forEach(d => {
+                setTimeout(() => { if (map) map.invalidateSize(true); }, d);
+            });
+        }
+        window.addEventListener('resize', forceRelayoutMap);
+
+        // ==========================================
+        // 5. 스마트폰 바텀시트 (Bottom Sheet) 제어
+        // ==========================================
+        function setBottomSheetState(state) {
+            bottomSheetState = state;
+            const sheet = document.getElementById('mobileBottomSheet');
+            sheet.classList.remove('state-collapsed', 'state-half', 'state-expanded');
+            sheet.classList.add(`state-${state}`);
+
+            const toggleIcon = document.getElementById('mobileListToggleIcon');
+            const toggleText = document.getElementById('mobileListToggleText');
+
+            if (state === 'collapsed') {
+                toggleIcon.className = 'fa-solid fa-list';
+                toggleText.innerText = '목록 보기';
+                document.getElementById('mobileSummaryLabel').innerText = '주차장 목록 열기 (탭/드래그)';
+            } else if (state === 'half') {
+                toggleIcon.className = 'fa-solid fa-map';
+                toggleText.innerText = '지도 보기';
+                document.getElementById('mobileSummaryLabel').innerText = '주차장 목록 (위로 올려 전체보기)';
+            } else {
+                toggleIcon.className = 'fa-solid fa-map';
+                toggleText.innerText = '지도 보기';
+                document.getElementById('mobileSummaryLabel').innerText = '주차장 목록 전체 (아래로 접기)';
+            }
+        }
+
+        function toggleBottomSheet() {
+            if (bottomSheetState === 'collapsed') {
+                setBottomSheetState('half');
+            } else if (bottomSheetState === 'half') {
+                setBottomSheetState('expanded');
+            } else {
+                setBottomSheetState('collapsed');
+            }
+        }
+
+        function initBottomSheetGestures() {
+            const handle = document.getElementById('bottomSheetHandle');
+            if (!handle) return;
+
+            let startY = 0;
+            let currentY = 0;
+
+            handle.addEventListener('touchstart', (e) => {
+                startY = e.touches[0].clientY;
+            }, { passive: true });
+
+            handle.addEventListener('touchmove', (e) => {
+                currentY = e.touches[0].clientY;
+            }, { passive: true });
+
+            handle.addEventListener('touchend', () => {
+                const diff = currentY - startY;
+                if (diff < -40) {
+                    if (bottomSheetState === 'collapsed') setBottomSheetState('half');
+                    else if (bottomSheetState === 'half') setBottomSheetState('expanded');
+                } else if (diff > 40) {
+                    if (bottomSheetState === 'expanded') setBottomSheetState('half');
+                    else if (bottomSheetState === 'half') setBottomSheetState('collapsed');
+                }
+            }, { passive: true });
+        }
+
+        // ==========================================
+        // 6. 주차장 렌더링 & 클러스터링
+        // ==========================================
+        function renderParkingLots(autoFitBounds = false) {
+            let list = [...ALL_PARKING_DATA];
+
+            if (currentRegionFilter !== 'all') {
+                list = list.filter(p => p.address.includes(currentRegionFilter) || p.name.includes(currentRegionFilter));
+            }
+
+            if (currentTypeFilter === 'free') list = list.filter(p => p.isFree);
+            else if (currentTypeFilter === 'public') list = list.filter(p => p.type === 'public');
+            else if (currentTypeFilter === 'paid') list = list.filter(p => p.type === 'paid');
+
+            if (!isNationwideMode && searchRadius !== 'all') {
+                const rNum = parseInt(searchRadius, 10);
+                list = list.filter(p => {
+                    const d = calculateDistance(currentSearchCenter.lat, currentSearchCenter.lng, p.lat, p.lng);
+                    p.distance = Math.round(d);
+                    return d <= rNum;
+                });
+            } else {
+                list.forEach(p => {
+                    p.distance = Math.round(calculateDistance(currentSearchCenter.lat, currentSearchCenter.lng, p.lat, p.lng));
+                });
+            }
+
+            list.sort((a, b) => {
+                if (currentSort === 'price_asc') {
+                    if (a.hourlyFee !== b.hourlyFee) return a.hourlyFee - b.hourlyFee;
+                    return a.distance - b.distance;
+                }
+                if (currentSort === 'distance') return a.distance - b.distance;
+                if (currentSort === 'capacity') return b.capacity - a.capacity;
+                return 0;
+            });
+
+            filteredParkingList = list;
+            document.getElementById('mobileSummaryCount').innerText = `${list.length.toLocaleString()}개소`;
+
+            clusterGroup.clearLayers();
+            const markers = [];
+
+            // 🌟 전국 주차장 100% 전수 렌더링 (마커클러스터 chunkedLoading으로 60fps 부드러운 반응속도)
+            list.forEach(item => {
+                let tagClass = 'tag-paid';
+                let priceLabel = `1시간 ${item.hourlyFee.toLocaleString()}원`;
+
+                if (item.isFree) {
+                    tagClass = 'tag-free';
+                    priceLabel = '🟢 무료';
+                } else if (item.type === 'public') {
+                    tagClass = 'tag-public';
+                    priceLabel = `🔵 1시간 ${item.hourlyFee.toLocaleString()}원`;
+                }
+
+                const markerHtml = `
+                    <div id="pin-${item.id}" class="price-marker-tag ${tagClass}" title="${item.name} (${item.address})">
+                        <span>${priceLabel}</span>
+                    </div>
+                `;
+
+                const icon = L.divIcon({
+                    className: 'custom-pin',
+                    html: markerHtml,
+                    iconSize: [85, 24],
+                    iconAnchor: [42, 24]
+                });
+
+                const m = L.marker([item.lat, item.lng], { 
+                    icon: icon,
+                    riseOnHover: true,
+                    bubblingMouseEvents: false
+                });
+                m.on('click', (e) => {
+                    if (e && e.originalEvent) {
+                        L.DomEvent.stopPropagation(e);
+                    }
+                    showParkingDashboard(item.id);
+                });
+                markers.push(m);
+            });
+
+            clusterGroup.addLayers(markers);
+            renderSidebarCards(list.slice(0, 100));
+
+            if (autoFitBounds) {
+                if (isNationwideMode) {
+                    map.setView([36.2, 127.8], 7);
+                } else if (markers.length > 0) {
+                    try {
+                        const bounds = L.latLngBounds(markers.map(m => m.getLatLng()));
+                        if (bounds && bounds.isValid()) {
+                            map.fitBounds(bounds.pad(0.08));
+                        }
+                    } catch (e) {
+                        console.warn('fitBounds safe recovery:', e);
+                    }
+                }
+            }
+            forceRelayoutMap();
+        }
+
+        function sampleEvenly(arr, count) {
+            const step = Math.ceil(arr.length / count);
+            const res = [];
+            for (let i = 0; i < arr.length && res.length < count; i += step) res.push(arr[i]);
+            return res;
+        }
+
+        function syncSidebarWithVisibleBounds() {
+            if (!map) return;
+            const bounds = map.getBounds();
+            const visibleLots = filteredParkingList.filter(p => bounds.contains([p.lat, p.lng]));
+            renderSidebarCards(visibleLots.slice(0, 100));
+            document.getElementById('mobileSummaryCount').innerText = `${visibleLots.length.toLocaleString()}개소`;
+        }
+
+        function renderSidebarCards(list) {
+            const container = document.getElementById('parkingListContainer');
+            if (list.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 px-4">
+                        <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-2 text-blue-600 text-xl">
+                            <i class="fa-solid fa-square-parking"></i>
+                        </div>
+                        <h3 class="font-extrabold text-slate-700 text-xs">해당 조건의 주차장이 없습니다</h3>
+                        <button onclick="showAllNationwideLots()" class="mt-3 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-sm">
+                            전국 전체 주차장 보기
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = list.map(item => {
+                let badgeClass = 'bg-amber-100 text-amber-800 border-amber-300';
+                let typeName = '유료';
+                const tmVal = (item.tenMinFee !== undefined && item.tenMinFee !== null) ? item.tenMinFee : Math.round(item.hourlyFee / 6);
+                const oneMinVal = Math.round(tmVal / 10);
+
+                let hourlyText = `<span class="text-amber-700 font-black text-sm">1시간 ${item.hourlyFee.toLocaleString()}원</span>`;
+                let tenMinBadge = `<span class="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">10분 약 ${tmVal.toLocaleString()}원 (1분 약 ${oneMinVal.toLocaleString()}원)</span>`;
+
+                if (item.isFree) {
+                    badgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                    typeName = '무료';
+                    hourlyText = `<span class="text-emerald-700 font-black text-sm">무료 (0원)</span>`;
+                    tenMinBadge = `<span class="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">10분 0원 (전액 무료)</span>`;
+                } else if (item.type === 'public') {
+                    badgeClass = 'bg-blue-100 text-blue-800 border-blue-300';
+                    typeName = '공영';
+                    hourlyText = `<span class="text-blue-700 font-black text-sm">1시간 ${item.hourlyFee.toLocaleString()}원</span>`;
+                    tenMinBadge = `<span class="text-[10px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">10분 약 ${tmVal.toLocaleString()}원 (1분 약 ${oneMinVal.toLocaleString()}원)</span>`;
+                }
+
+                const distStr = item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`;
+                const rateFormula = item.isFree 
+                    ? '<span class="text-emerald-600 font-bold">24시간 상시 무료 개방</span>'
+                    : `기본 ${item.baseTime}분 ${item.baseFee.toLocaleString()}원 · 추가 ${item.extraTime}분당 ${item.extraFee.toLocaleString()}원${item.dailyFee > 0 ? ` · 1일 최대 ${item.dailyFee.toLocaleString()}원` : ''}`;
+
+                return `
+                    <div id="card-${item.id}" onclick="selectParkingItem('${item.id}')"
+                        class="parking-card bg-white rounded-2xl p-3.5 border border-slate-200 hover:border-blue-500 hover:shadow-md cursor-pointer transition relative group active:bg-slate-50">
+                        
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+                                    <span class="px-2 py-0.5 rounded-md text-[10px] font-black border ${badgeClass}">
+                                        ${typeName}
+                                    </span>
+                                    <span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                                        <i class="fa-solid fa-location-dot text-slate-400"></i> ${distStr}
+                                    </span>
+                                    ${item.is24h ? '<span class="text-[10px] text-slate-400 font-medium">24시간</span>' : ''}
+                                </div>
+                                <h3 class="font-extrabold text-slate-900 text-sm truncate group-hover:text-blue-600 transition">
+                                    ${item.name}
+                                </h3>
+                                <p class="text-xs text-slate-500 truncate mt-0.5">${item.address}</p>
+                            </div>
+                        </div>
+
+                        <!-- 분/시간당 정밀 요금 & 주차 면수 -->
+                        <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between flex-wrap gap-1">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                ${hourlyText}
+                                ${tenMinBadge}
+                            </div>
+                            <div class="text-[11px] text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-lg">
+                                ${item.capacity}면
+                            </div>
+                        </div>
+                        <div class="mt-1 text-[11px] text-slate-500 truncate">
+                            ${rateFormula}
+                        </div>
+
+                        <!-- 액션 버튼: 원터치 길찾기 & 상세 요금 -->
+                        <div class="mt-2.5 flex items-center gap-1.5 pt-1">
+                            <button onclick="event.stopPropagation(); showParkingDashboard('${item.id}')" 
+                                class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 shadow-sm">
+                                <i class="fa-solid fa-diamond-turn-right text-yellow-300 text-xs"></i> <span>원터치 길찾기 (내비)</span>
+                            </button>
+                            <button onclick="event.stopPropagation(); openDetailModalWithItem('${item.id}')" 
+                                class="py-2.5 px-3.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1">
+                                <span>상세 요금</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ==========================================
+        // 7. 스마트폰 전용 원터치 대시보드 & 길안내 엔진
+        // ==========================================
+        let lastMarkerClickTimestamp = 0;
+
+        function showParkingDashboard(itemId) {
+            lastMarkerClickTimestamp = Date.now();
+            const item = ALL_PARKING_DATA.find(p => String(p.id) === String(itemId));
+            if (!item) return;
+
+            selectedParking = item;
+
+            // 사이드바 카드 하이라이트
+            document.querySelectorAll('.parking-card').forEach(c => {
+                c.classList.remove('border-blue-500', 'bg-blue-50/40', 'ring-2', 'ring-blue-200');
+            });
+            const cardEl = document.getElementById(`card-${itemId}`);
+            if (cardEl) {
+                cardEl.classList.add('border-blue-500', 'bg-blue-50/40', 'ring-2', 'ring-blue-200');
+                cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            // 대시보드 내용 채우기
+            const titleEl = document.getElementById('dashTitle');
+            if (titleEl) titleEl.innerText = item.name;
+
+            const addrEl = document.getElementById('dashAddress');
+            if (addrEl) addrEl.innerHTML = `<i class="fa-solid fa-location-dot text-slate-400 text-[10px]"></i> <span class="truncate">${item.address}</span>`;
+
+            const typeBadge = document.getElementById('dashTypeBadge');
+            if (typeBadge) {
+                if (item.isFree) {
+                    typeBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white shadow-2xs';
+                    typeBadge.innerText = '무료';
+                } else if (item.type === 'public') {
+                    typeBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-600 text-white shadow-2xs';
+                    typeBadge.innerText = '공영';
+                } else {
+                    typeBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white shadow-2xs';
+                    typeBadge.innerText = '유료';
+                }
+            }
+
+            const distBadge = document.getElementById('dashDistBadge');
+            if (distBadge) {
+                const d = item.distance !== undefined ? item.distance : Math.round(calculateDistance(currentSearchCenter.lat, currentSearchCenter.lng, item.lat, item.lng));
+                const distStr = d < 1000 ? `${d}m` : `${(d / 1000).toFixed(1)}km`;
+                distBadge.innerHTML = `<i class="fa-solid fa-location-dot"></i> ${distStr}`;
+            }
+
+            const capBadge = document.getElementById('dashCapacityBadge');
+            if (capBadge) capBadge.innerText = `${item.capacity}면`;
+
+            const timeBadge = document.getElementById('dashTimeBadge');
+            if (timeBadge) timeBadge.innerText = item.is24h ? '24시간' : '운영시간별도';
+
+            const hFeeEl = document.getElementById('dashHourlyFee');
+            const tmFeeEl = document.getElementById('dashTenMinFee');
+            const tmVal = (item.tenMinFee !== undefined && item.tenMinFee !== null) ? item.tenMinFee : Math.round(item.hourlyFee / 6);
+            const oneMinVal = Math.round(tmVal / 10);
+
+            if (item.isFree) {
+                if (hFeeEl) hFeeEl.innerText = '0원 (무료)';
+                if (tmFeeEl) tmFeeEl.innerText = '10분 0원 (전액 무료)';
+            } else {
+                if (hFeeEl) hFeeEl.innerText = `1시간 ${item.hourlyFee.toLocaleString()}원`;
+                if (tmFeeEl) tmFeeEl.innerText = `10분 약 ${tmVal.toLocaleString()}원 (1분 약 ${oneMinVal.toLocaleString()}원)`;
+            }
+
+            const phoneBtn = document.getElementById('dashPhoneBtn');
+            if (phoneBtn) phoneBtn.href = `tel:${item.phone || '02-120'}`;
+
+            // 스마트폰에서 하단 대시보드에 핀이 가려지지 않도록 지도 화면을 부드럽게 오프셋 패닝
+            if (map) {
+                const isMobile = window.innerWidth < 768;
+                if (isMobile) {
+                    const pt = map.project([item.lat, item.lng], map.getZoom()).add([0, 130]);
+                    map.panTo(map.unproject(pt, map.getZoom()), { animate: true, duration: 0.25 });
+                } else {
+                    map.panTo([item.lat, item.lng], { animate: true, duration: 0.25 });
+                }
+            }
+
+            // 모바일 바텀시트가 열려있다면 임시로 내려 대시보드가 시원하게 보이도록 처리
+            const sheet = document.getElementById('mobileBottomSheet');
+            if (sheet && window.innerWidth < 768) {
+                sheet.classList.add('!hidden');
+            }
+
+            // 대시보드 표시
+            const dash = document.getElementById('parkingDetailDashboard');
+            if (dash) {
+                dash.classList.remove('hidden');
+                dash.style.display = 'block';
+            }
+
+            // 모바일 플로팅 목록 토글 버튼이 대시보드와 겹치지 않도록 임시 숨김 처리
+            const listToggleWrap = document.getElementById('mobileListToggleBtn');
+            if (listToggleWrap && listToggleWrap.parentElement) {
+                listToggleWrap.parentElement.classList.add('hidden');
+            }
+        }
+
+        function closeParkingDashboard() {
+            const dash = document.getElementById('parkingDetailDashboard');
+            if (dash) {
+                dash.classList.add('hidden');
+                dash.style.display = 'none';
+            }
+
+            // 모바일 바텀시트 복원
+            const sheet = document.getElementById('mobileBottomSheet');
+            if (sheet && window.innerWidth < 768) {
+                sheet.classList.remove('!hidden');
+            }
+
+            // 모바일 플로팅 목록 토글 버튼 복원
+            const listToggleWrap = document.getElementById('mobileListToggleBtn');
+            if (listToggleWrap && listToggleWrap.parentElement) {
+                listToggleWrap.parentElement.classList.remove('hidden');
+            }
+        }
+
+        function copyCurrentParkingAddress() {
+            if (!selectedParking) return;
+            const addr = selectedParking.address;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(addr).then(() => showToast('주소가 복사되었습니다!'));
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = addr;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('주소가 복사되었습니다!');
+            }
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('appToast');
+            const toastMsg = document.getElementById('toastMsg');
+            if (toast && toastMsg) {
+                toastMsg.innerText = msg;
+                toast.classList.remove('opacity-0', 'pointer-events-none');
+                toast.classList.add('opacity-100');
+                setTimeout(() => {
+                    toast.classList.remove('opacity-100');
+                    toast.classList.add('opacity-0', 'pointer-events-none');
+                }, 2200);
+            }
+        }
+
+        function quickNavigate(itemId, appName) {
+            const item = ALL_PARKING_DATA.find(p => String(p.id) === String(itemId));
+            if (!item) return;
+            selectedParking = item;
+            openSmartNavi(appName || 'kakao');
+        }
+
+        function openDetailModalForCurrent() {
+            if (selectedParking) {
+                openDetailModalWithItem(selectedParking.id);
+            }
+        }
+
+        function stopNavigation() {
+            closeParkingDashboard();
+        }
+
+        // ==========================================
+        // 8. 스마트폰 앱 딥링크 (카카오내비/티맵/네이버)
+        // ==========================================
+        function openSmartNavi(app) {
+            if (!selectedParking) return;
+            const n = encodeURIComponent(selectedParking.name);
+            const lat = selectedParking.lat;
+            const lng = selectedParking.lng;
+
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+            if (app === 'kakao') {
+                if (isMobile) {
+                    window.location.href = `kakaonavi://navigate?name=${n}&x=${lng}&y=${lat}`;
+                    setTimeout(() => {
+                        window.open(`https://map.kakao.com/link/to/${n},${lat},${lng}`, '_blank');
+                    }, 1200);
+                } else {
+                    window.open(`https://map.kakao.com/link/to/${n},${lat},${lng}`, '_blank');
+                }
+            } else if (app === 'tmap') {
+                if (isMobile) {
+                    window.location.href = `tmap://route?goalname=${n}&goallat=${lat}&goallon=${lng}`;
+                    setTimeout(() => {
+                        window.open(`https://tmap.life/search?name=${n}&lat=${lat}&lon=${lng}`, '_blank');
+                    }, 1200);
+                } else {
+                    window.open(`https://tmap.life/search?name=${n}&lat=${lat}&lon=${lng}`, '_blank');
+                }
+            } else if (app === 'naver') {
+                if (isMobile) {
+                    window.location.href = `nmap://navigation?dlat=${lat}&dlng=${lng}&dname=${n}&appname=com.parking.finder`;
+                    setTimeout(() => {
+                        window.open(`https://map.naver.com/v5/directions/-/${lng},${lat},${n}/-/car`, '_blank');
+                    }, 1200);
+                } else {
+                    window.open(`https://map.naver.com/v5/directions/-/${lng},${lat},${n}/-/car`, '_blank');
+                }
+            }
+        }
+
+        // ==========================================
+        // 9. 스마트 정확 검색 엔진
+        // ==========================================
+        function handleSearchSubmit(e) {
+            if (e) e.preventDefault();
+            const inputVal = (document.getElementById('searchInput').value || document.getElementById('mobileSearchInput').value || '').trim();
+            if (!inputVal) {
+                alert('검색어를 입력해주세요 (예: 강남역, 해운대, 여의도, 판교, 속초)');
+                return;
+            }
+
+            if (isNavigating) stopNavigation();
+
+            const q = inputVal.toLowerCase();
+
+            // 1) 주요 랜드마크 사전 확인 (강남역, 홍대, 판교, 해운대, 여의도 등)
+            let matchedLandmark = null;
+            for (const lm of KOREA_LANDMARKS) {
+                if (lm.name.toLowerCase().includes(q) || q.includes(lm.name.toLowerCase())) {
+                    matchedLandmark = lm;
+                    break;
+                }
+                if (lm.alias.some(a => a.toLowerCase() === q || q.includes(a.toLowerCase()))) {
+                    matchedLandmark = lm;
+                    break;
+                }
+            }
+
+            // 2) 주차장 데이터베이스 검색 (이름 & 주소 가중치 정렬)
+            let scoredLots = [];
+            ALL_PARKING_DATA.forEach(p => {
+                let score = 0;
+                const pName = p.name.toLowerCase();
+                const pAddr = p.address.toLowerCase();
+
+                if (pName === q) score += 100;
+                else if (pName.startsWith(q)) score += 80;
+                else if (pName.includes(q)) score += 60;
+
+                if (pAddr.includes(q)) score += 40;
+
+                // 랜드마크가 매칭된 경우 반경 3km 내외의 주차장에 추가 가중치
+                if (matchedLandmark) {
+                    const dist = calculateDistance(matchedLandmark.lat, matchedLandmark.lng, p.lat, p.lng);
+                    if (dist <= 3500) {
+                        score += Math.max(10, Math.round((3500 - dist) / 50));
+                    }
+                }
+
+                if (score > 0) {
+                    scoredLots.push({ item: p, score: score });
+                }
+            });
+
+            if (scoredLots.length > 0) {
+                scoredLots.sort((a, b) => b.score - a.score);
+                const best = scoredLots[0].item;
+                const targetLat = matchedLandmark ? matchedLandmark.lat : best.lat;
+                const targetLng = matchedLandmark ? matchedLandmark.lng : best.lng;
+                const targetName = matchedLandmark ? matchedLandmark.name : best.name;
+
+                moveToSpecificLocation(targetLat, targetLng, targetName);
+
+                // 검색 결과 알림 표시
+                const noti = document.getElementById('searchResultNotification');
+                noti.classList.remove('hidden');
+                document.getElementById('searchResultNotificationText').innerText = `'${inputVal}' 검색 결과 (${scoredLots.length}개소)`;
+                return;
+            }
+
+            // 3) DB에 직접 일치하는 이름이 없을 때 오픈스트리트맵 지오코딩 폴백
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(inputVal)}&countrycodes=kr&limit=1`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.length > 0) {
+                        moveToSpecificLocation(parseFloat(data[0].lat), parseFloat(data[0].lon), inputVal);
+                    } else {
+                        alert(`'${inputVal}' 위치를 찾을 수 없습니다. 지역명이나 역 이름을 입력해주세요.`);
+                    }
+                })
+                .catch(() => alert('검색 중 일시적인 오류가 발생했습니다.'));
+        }
+
+        function moveToSpecificLocation(lat, lng, name) {
+            if (isNavigating) stopNavigation();
+            isNationwideMode = false;
+            currentSearchCenter = { lat, lng, name };
+            searchRadius = '3000';
+            document.getElementById('radiusSelect').value = '3000';
+            document.getElementById('mobileSummaryLabel').innerText = `${name} 주변 3km`;
+
+            map.setView([lat, lng], 15, { animate: true });
+            renderParkingLots(false);
+
+            if (window.innerWidth < 768) setBottomSheetState('half');
+        }
+
+        // 실시간 내 GPS 위치 찾기
+        function getUserCurrentLocation() {
+            if (!navigator.geolocation) {
+                alert('GPS 위치를 지원하지 않는 브라우저입니다.');
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                pos => {
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+                    userCurrentGps = [lat, lng];
+
+                    if (userGpsMarker) map.removeLayer(userGpsMarker);
+                    const gpsIcon = L.divIcon({
+                        className: 'my-gps-pin',
+                        html: `<div class="gps-pulse-marker" title="내 현재 위치"></div>`,
+                        iconSize: [22, 22],
+                        iconAnchor: [11, 11]
+                    });
+                    userGpsMarker = L.marker([lat, lng], { icon: gpsIcon, zIndexOffset: 1500 }).addTo(map);
+
+                    moveToSpecificLocation(lat, lng, '내 현재 위치');
+                },
+                () => alert('위치 권한을 허용해 주시면 현재 내 위치 주변 주차장을 바로 찾을 수 있습니다.'),
+                { enableHighAccuracy: true, timeout: 8000 }
+            );
+        }
+
+        function zoomMap(delta) {
+            if (!map) return;
+            try {
+                const currentZoom = map.getZoom();
+                const minZoom = map.getMinZoom() || 6;
+                const maxZoom = map.getMaxZoom() || 19;
+                if (delta > 0 && currentZoom < maxZoom) {
+                    map.zoomIn(1, { animate: true });
+                } else if (delta < 0 && currentZoom > minZoom) {
+                    map.zoomOut(1, { animate: true });
+                }
+            } catch (err) {
+                console.warn('zoomMap caught error:', err);
+                try { map.invalidateSize(false); } catch(e){}
+            }
+        }
+
+        function setParkingTypeFilter(type) {
+            currentTypeFilter = type;
+            document.querySelectorAll('.type-tab').forEach(btn => {
+                btn.classList.remove('bg-slate-900', 'text-white');
+                btn.classList.add('bg-white');
+            });
+            const activeBtn = document.getElementById(`tab-${type}`);
+            if (activeBtn) {
+                activeBtn.classList.remove('bg-white');
+                activeBtn.classList.add('bg-slate-900', 'text-white');
+            }
+            renderParkingLots(false);
+        }
+
+        function changeRadius(val) {
+            if (val === 'all') showAllNationwideLots();
+            else {
+                isNationwideMode = false;
+                searchRadius = val;
+                renderParkingLots(false);
+            }
+        }
+
+        function changeSort(s) {
+            currentSort = s;
+            renderParkingLots(false);
+        }
+
+        function showAllNationwideLots() {
+            if (isNavigating) stopNavigation();
+            isNationwideMode = true;
+            searchRadius = 'all';
+            currentRegionFilter = 'all';
+            document.getElementById('radiusSelect').value = 'all';
+            document.getElementById('mobileSummaryLabel').innerText = '전국 전체 주차장';
+            document.getElementById('searchResultNotification').classList.add('hidden');
+
+            document.querySelectorAll('.region-chip').forEach(c => {
+                c.classList.remove('bg-slate-800', 'text-white');
+                c.classList.add('bg-white', 'text-slate-700');
+            });
+            const allChip = document.querySelector('.region-chip');
+            if (allChip) {
+                allChip.classList.remove('bg-white', 'text-slate-700');
+                allChip.classList.add('bg-slate-800', 'text-white');
+            }
+
+            renderParkingLots(true);
+        }
+
+        function showRegion(rName) {
+            if (isNavigating) stopNavigation();
+            currentRegionFilter = rName;
+            document.getElementById('searchResultNotification').classList.add('hidden');
+
+            document.querySelectorAll('.region-chip').forEach(c => {
+                c.classList.remove('bg-slate-800', 'text-white');
+                c.classList.add('bg-white', 'text-slate-700');
+            });
+            event.target.classList.remove('bg-white', 'text-slate-700');
+            event.target.classList.add('bg-slate-800', 'text-white');
+
+            if (rName === 'all') {
+                showAllNationwideLots();
+                return;
+            }
+
+            isNationwideMode = false;
+            document.getElementById('mobileSummaryLabel').innerText = `${rName} 권역`;
+            renderParkingLots(true);
+        }
+
+        // ==========================================
+        // 10. 주차장 선택 & 상세 모달 (지도가 덮지 않는 완전 해결)
+        // ==========================================
+        function selectParkingItem(itemId) {
+            const item = ALL_PARKING_DATA.find(p => String(p.id) === String(itemId));
+            if (!item) return;
+
+            selectedParking = item;
+
+            // 사이드바 카드 하이라이트
+            document.querySelectorAll('.parking-card').forEach(c => {
+                c.classList.remove('border-blue-500', 'bg-blue-50/40', 'ring-2', 'ring-blue-200');
+            });
+            const cardEl = document.getElementById(`card-${itemId}`);
+            if (cardEl) {
+                cardEl.classList.add('border-blue-500', 'bg-blue-50/40', 'ring-2', 'ring-blue-200');
+                cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            if (map) {
+                map.setView([item.lat, item.lng], 16, { animate: true });
+            }
+
+            // ★ 오류 수정: 주차장을 눌렀을 때 지도가 가리는 대신 상세 모달을 즉시 오픈!
+            openDetailModalWithItem(itemId);
+        }
+
+        function calcFeeForMinutes(parking, minutes) {
+            if (!parking || parking.isFree) return 0;
+            const baseT = parking.baseTime || 30;
+            const baseF = parking.baseFee || 0;
+            const extraT = parking.extraTime || 10;
+            const extraF = parking.extraFee || 0;
+            const dailyF = parking.dailyFee || 0;
+
+            let fee = 0;
+            if (minutes <= baseT) {
+                fee = baseF;
+            } else {
+                const extraMins = minutes - baseT;
+                const extraUnits = Math.ceil(extraMins / (extraT || 10));
+                fee = baseF + (extraUnits * extraF);
+            }
+            if (dailyF > 0 && fee > dailyF) {
+                fee = dailyF;
+            }
+            return fee;
+        }
+
+        function openDetailModalWithItem(itemId) {
+            const item = ALL_PARKING_DATA.find(p => String(p.id) === String(itemId));
+            if (!item) return;
+
+            selectedParking = item;
+
+            document.getElementById('modalTitle').innerText = item.name;
+            document.getElementById('modalAddress').innerHTML = `<i class="fa-solid fa-location-dot text-slate-400"></i> ${item.address}`;
+            document.getElementById('modalCapacityBadge').innerText = `총 ${item.capacity}면`;
+
+            const typeBadge = document.getElementById('modalTypeBadge');
+            if (item.isFree) {
+                typeBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white';
+                typeBadge.innerText = '무료 주차장';
+            } else if (item.type === 'public') {
+                typeBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600 text-white';
+                typeBadge.innerText = '공영 주차장';
+            } else {
+                typeBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-white';
+                typeBadge.innerText = '유료(민영)';
+            }
+
+            const hourlyMain = document.getElementById('modalHourlyFeeMain');
+            const tenMinMain = document.getElementById('modalTenMinFeeMain');
+            const hourlySub = document.getElementById('modalHourlySubText');
+            const perMinSub = document.getElementById('modalPerMinuteSubText');
+
+            const tmVal = item.tenMinFee !== undefined && item.tenMinFee !== null ? item.tenMinFee : Math.round(item.hourlyFee / 6);
+            const oneMinVal = Math.round(tmVal / 10);
+
+            if (item.isFree) {
+                hourlyMain.innerText = '0원 (무료)';
+                hourlyMain.className = 'text-lg md:text-xl font-black text-emerald-600 mt-0.5';
+                if (hourlySub) hourlySub.innerText = '24시간 전액 무료';
+                if (tenMinMain) {
+                    tenMinMain.innerText = '0원 (무료)';
+                    tenMinMain.className = 'text-lg md:text-xl font-black text-emerald-600 mt-0.5';
+                }
+                if (perMinSub) perMinSub.innerText = '1분 0원';
+            } else {
+                hourlyMain.innerText = `1시간 ${item.hourlyFee.toLocaleString()}원`;
+                hourlyMain.className = 'text-lg md:text-xl font-black text-sky-700 mt-0.5';
+                if (hourlySub) hourlySub.innerText = '60분 체류 기준';
+                if (tenMinMain) {
+                    tenMinMain.innerText = `10분 ${tmVal.toLocaleString()}원`;
+                    tenMinMain.className = 'text-lg md:text-xl font-black text-amber-700 mt-0.5';
+                }
+                if (perMinSub) perMinSub.innerText = `1분 약 ${oneMinVal.toLocaleString()}원`;
+            }
+
+            // 🌟 5대 주요 체류시간대별 즉시 확인 요금표 채우기
+            const fee10 = calcFeeForMinutes(item, 10);
+            const fee30 = calcFeeForMinutes(item, 30);
+            const fee60 = calcFeeForMinutes(item, 60);
+            const fee120 = calcFeeForMinutes(item, 120);
+
+            const q10 = document.getElementById('quickFee10m');
+            const q30 = document.getElementById('quickFee30m');
+            const q60 = document.getElementById('quickFee60m');
+            const q120 = document.getElementById('quickFee120m');
+            const qDaily = document.getElementById('quickFeeDaily');
+
+            if (q10) q10.innerText = item.isFree ? '0원' : `${fee10.toLocaleString()}원`;
+            if (q30) q30.innerText = item.isFree ? '0원' : `${fee30.toLocaleString()}원`;
+            if (q60) q60.innerText = item.isFree ? '0원' : `${fee60.toLocaleString()}원`;
+            if (q120) q120.innerText = item.isFree ? '0원' : `${fee120.toLocaleString()}원`;
+            if (qDaily) {
+                if (item.isFree) qDaily.innerText = '0원';
+                else if (item.dailyFee > 0) qDaily.innerText = `${item.dailyFee.toLocaleString()}원`;
+                else qDaily.innerText = '상한없음';
+            }
+
+            const rateDetailEl = document.getElementById('modalRateDetail');
+            if (rateDetailEl) {
+                rateDetailEl.innerText = item.isFree ? '24시간 상시 무료 개방' : `기본 ${item.baseTime}분 ${item.baseFee.toLocaleString()}원 / 추가 ${item.extraTime}분당 ${item.extraFee.toLocaleString()}원`;
+            }
+
+            document.getElementById('modalBaseFee').innerText = item.isFree ? '무료' : `${item.baseTime}분 ${item.baseFee.toLocaleString()}원`;
+            document.getElementById('modalExtraFee').innerText = item.isFree ? '무료' : `${item.extraTime}분당 ${item.extraFee.toLocaleString()}원`;
+            document.getElementById('modalDailyFee').innerText = item.isFree ? '0원' : (item.dailyFee > 0 ? `${item.dailyFee.toLocaleString()}원` : '정보 없음');
+
+            document.getElementById('modalWeekdayTime').innerText = item.weekdayTime;
+            document.getElementById('modalSaturdayTime').innerText = item.saturdayTime;
+            document.getElementById('modalHolidayTime').innerText = item.holidayTime;
+
+            document.getElementById('modalPhoneText').innerText = item.phone || '02-120';
+            document.getElementById('modalPhoneBtn').href = `tel:${item.phone || '02-120'}`;
+
+            // 계산기 60분으로 리셋 및 초기 계산 실행
+            const slider = document.getElementById('parkingDurationSlider');
+            if (slider) slider.value = 60;
+            updateCalculatedFee();
+
+            // 지도에 가려지지 않게 display: flex 및 z-index 최상단 보장
+            const modal = document.getElementById('detailModal');
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+        }
+
+        function closeDetailModal() {
+            const modal = document.getElementById('detailModal');
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        }
+
+        function setDurationPreset(mins) {
+            const slider = document.getElementById('parkingDurationSlider');
+            if (slider) {
+                slider.value = mins;
+                updateCalculatedFee();
+            }
+        }
+
+        function adjustDuration(deltaMins) {
+            const slider = document.getElementById('parkingDurationSlider');
+            if (slider) {
+                let val = parseInt(slider.value, 10) + deltaMins;
+                if (val < 10) val = 10;
+                if (val > 1440) val = 1440;
+                slider.value = val;
+                updateCalculatedFee();
+            }
+        }
+
+        function updateCalculatedFee() {
+            const slider = document.getElementById('parkingDurationSlider');
+            const minutes = parseInt(slider ? slider.value : 60, 10);
+            const hours = Math.floor(minutes / 60);
+            const remainMins = minutes % 60;
+
+            let str = '';
+            if (hours > 0) str += `${hours}시간 `;
+            if (remainMins > 0 || hours === 0) str += `${remainMins}분`;
+            const durationTextEl = document.getElementById('parkingDurationText');
+            if (durationTextEl) durationTextEl.innerText = str;
+
+            const feeResultEl = document.getElementById('calculatedFeeResult');
+            const breakdownEl = document.getElementById('feeBreakdownDetail');
+
+            if (!selectedParking || selectedParking.isFree) {
+                if (feeResultEl) feeResultEl.innerText = '0원 (무료)';
+                if (breakdownEl) breakdownEl.innerHTML = '<span class="text-emerald-600 font-bold">🟢 24시간 전액 무료 개방 주차장 (0원)</span>';
+                return;
+            }
+
+            const baseT = selectedParking.baseTime || 30;
+            const baseF = selectedParking.baseFee || 0;
+            const extraT = selectedParking.extraTime || 10;
+            const extraF = selectedParking.extraFee || 0;
+            const dailyF = selectedParking.dailyFee || 0;
+
+            let calculatedFee = 0;
+            let breakdownText = '';
+
+            if (minutes <= baseT) {
+                calculatedFee = baseF;
+                breakdownText = `최초 기본 ${baseT}분 적용: <strong>${baseF.toLocaleString()}원</strong>`;
+            } else {
+                const extraMins = minutes - baseT;
+                const extraUnits = Math.ceil(extraMins / (extraT || 10));
+                const extraCharge = extraUnits * extraF;
+                calculatedFee = baseF + extraCharge;
+                breakdownText = `기본 ${baseT}분(${baseF.toLocaleString()}원) + 추가 ${extraMins}분(${extraT}분 단위 ${extraUnits}회 × ${extraF.toLocaleString()}원 = ${extraCharge.toLocaleString()}원)`;
+            }
+
+            if (dailyF > 0 && calculatedFee > dailyF) {
+                breakdownText += `<br><span class="text-blue-600 font-bold">※ 1일 최대 한도(${dailyF.toLocaleString()}원) 자동 상한 적용 (원 계산액: ${calculatedFee.toLocaleString()}원)</span>`;
+                calculatedFee = dailyF;
+            }
+
+            if (feeResultEl) feeResultEl.innerText = `${calculatedFee.toLocaleString()}원`;
+            if (breakdownEl) breakdownEl.innerHTML = breakdownText;
+        }
+
+        // ==========================================
+        // 11. 스마트폰 어플 다운로드 & PWA 설치 제어
+        // ==========================================
+        let qrCodeInstance = null;
+        let currentQrMode = 'internet'; // 'internet' | 'local'
+        const GITHUB_PAGES_URL = 'https://dd5650.github.io/parkingnow/';
+        const LOCAL_WIFI_URL = 'http://192.168.219.101:8000';
+
+        // PWA Service Worker 등록
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(err => {
+                    console.log('SW registration note:', err);
+                });
+            });
+        }
+
+        let deferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const pwaBtn = document.getElementById('pwaInstallBtn');
+            if (pwaBtn) pwaBtn.classList.remove('hidden');
+            console.log('📱 PWA 어플 설치 준비 완료');
+        });
+
+        window.addEventListener('appinstalled', () => {
+            deferredPrompt = null;
+            showToast('🎉 파킹파인더 앱이 휴대폰에 성공적으로 설치되었습니다!');
+        });
+
+        function triggerPwaInstall() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choice) => {
+                    if (choice.outcome === 'accepted') {
+                        showToast('앱 설치가 진행 중입니다...');
+                    }
+                    deferredPrompt = null;
+                });
+            } else {
+                openPwaInstallGuideModal();
+            }
+        }
+
+        function openPwaInstallGuideModal() {
+            const m = document.getElementById('pwaInstallGuideModal');
+            if (m) {
+                m.classList.remove('hidden');
+                m.style.display = 'flex';
+            }
+        }
+
+        function closePwaInstallGuideModal() {
+            const m = document.getElementById('pwaInstallGuideModal');
+            if (m) {
+                m.classList.add('hidden');
+                m.style.display = 'none';
+            }
+        }
+
+        function switchQrMode(mode) {
+            currentQrMode = mode;
+            const btnNet = document.getElementById('btnQrModeInternet');
+            const btnLocal = document.getElementById('btnQrModeLocal');
+            let targetUrl = '';
+            
+            if (mode === 'internet') {
+                targetUrl = GITHUB_PAGES_URL;
+                if (btnNet) btnNet.className = 'flex-1 py-1.5 rounded-lg font-black text-xs bg-indigo-600 text-white shadow-xs transition flex items-center justify-center gap-1';
+                if (btnLocal) btnLocal.className = 'flex-1 py-1.5 rounded-lg font-bold text-xs text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1';
+            } else {
+                targetUrl = LOCAL_WIFI_URL;
+                if (window.location.protocol.startsWith('http') && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !window.location.hostname.includes('github.io')) {
+                    targetUrl = window.location.origin + window.location.pathname;
+                }
+                if (btnLocal) btnLocal.className = 'flex-1 py-1.5 rounded-lg font-black text-xs bg-indigo-600 text-white shadow-xs transition flex items-center justify-center gap-1';
+                if (btnNet) btnNet.className = 'flex-1 py-1.5 rounded-lg font-bold text-xs text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1';
+            }
+
+            const input = document.getElementById('mobileConnectIpInput');
+            if (input) input.value = targetUrl;
+            renderQRCode(targetUrl);
+            const directBtn = document.getElementById('qrDirectOpenBtn');
+            if (directBtn) directBtn.href = targetUrl;
+        }
+
+        function openMobileConnectModal() {
+            const modal = document.getElementById('mobileConnectModal');
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.style.display = 'flex';
+            }
+            switchQrMode('internet');
+        }
+
+        function closeMobileConnectModal() {
+            const modal = document.getElementById('mobileConnectModal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.style.display = 'none';
+            }
+        }
+
+        function copyQrUrl() {
+            const input = document.getElementById('mobileConnectIpInput');
+            const url = input ? input.value : document.getElementById('qrUrlLink').innerText;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).then(() => showToast('다운로드 주소가 복사되었습니다!'));
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = url;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('다운로드 주소가 복사되었습니다!');
+            }
+        }
+
+        function renderQRCode(url) {
+            const container = document.getElementById('qrCodeContainer');
+            if (!container) return;
+            container.innerHTML = '';
+            const linkEl = document.getElementById('qrUrlLink');
+            if (linkEl) {
+                linkEl.innerText = url;
+                linkEl.href = url;
+            }
+
+            if (typeof QRCode !== 'undefined') {
+                try {
+                    qrCodeInstance = new QRCode(container, {
+                        text: url,
+                        width: 180,
+                        height: 180,
+                        colorDark: '#0f172a',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                    return;
+                } catch(e) {
+                    console.log('QRCode lib fallback to image');
+                }
+            }
+            container.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}" alt="QR Code" class="w-[180px] h-[180px] rounded-xl shadow-xs" />`;
+        }
+
+        // 기타 설정 모달
+        function openApiKeyModal() { 
+            const m = document.getElementById('apiKeyModal');
+            m.classList.remove('hidden');
+            m.style.display = 'flex';
+        }
+        function closeApiKeyModal() { 
+            const m = document.getElementById('apiKeyModal');
+            m.classList.add('hidden');
+            m.style.display = 'none';
+        }
+        function saveApiKey() {
+            const v = document.getElementById('kakaoApiKeyInput').value.trim();
+            if (v) localStorage.setItem('kakao_map_api_key', v);
+            closeApiKeyModal();
+        }
+
+        function openInfoModal() { 
+            const m = document.getElementById('infoModal');
+            m.classList.remove('hidden');
+            m.style.display = 'flex';
+        }
+        function closeInfoModal() { 
+            const m = document.getElementById('infoModal');
+            m.classList.add('hidden');
+            m.style.display = 'none';
+        }
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3;
+            const p1 = lat1 * Math.PI / 180;
+            const p2 = lat2 * Math.PI / 180;
+            const dp = (lat2 - lat1) * Math.PI / 180;
+            const dl = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dp/2) * Math.sin(dp/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) * Math.sin(dl/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initApp();
+        });
+    </script>
+</body>
+</html>

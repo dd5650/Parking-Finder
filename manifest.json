@@ -1,0 +1,20 @@
+{
+  "name": "파킹파인더 - 전국 주차장 & 스마트 내비",
+  "short_name": "파킹파인더",
+  "description": "전국 18,198개소 실시간 주차장 분/시간당 요금 비교 및 스마트폰 원터치 길안내",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "categories": ["navigation", "utilities", "travel"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='128' fill='%232563eb'/><path fill='%23ffffff' d='M160 96h120c66 0 112 40 112 100 0 56-42 98-106 100v120h-56V96zm56 150h58c38 0 60-20 60-50 0-32-24-50-60-50h-58v100z'/></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
